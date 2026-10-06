@@ -1,0 +1,12 @@
+# Personal data — never commit
+*.pdf
+profile*.json
+.jobpilot/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+node_modules/
