@@ -1,0 +1,105 @@
+```html
+<!doctype html>
+<html><head><meta charset="utf-8"><title>RUNNING</title>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"JobPosting","title":"Platform Engineer",
+ "hiringOrganization":{"@type":"Organization","name":"Initech"},
+ "description":"<p>We are hiring a Platform Engineer to run Kubernetes on AWS. Responsibilities include building CI/CD, observability and infrastructure as code with Terraform. Requirements: 5+ years of DevOps experience, strong Linux, Python scripting, and on-call ownership of production systems.</p>"}
+</script></head>
+<body>
+<h1>Platform Engineer</h1>
+<!-- Greenhouse-like: label[for] -->
+<form id="gh">
+  <label for="first_name">First Name *</label><input id="first_name" name="job_application[first_name]">
+  <label for="last_name">Last Name *</label><input id="last_name" name="job_application[last_name]">
+  <label for="email">Email *</label><input id="email" type="email">
+  <label for="phone">Phone</label><input id="phone" type="tel" value="+1 555 0100">
+  <label for="resume">Resume/CV</label><input id="resume" type="file" style="display:none">
+  <label for="cover">Cover letter</label><input id="cover" type="file">
+  <label for="country">Country</label>
+  <select id="country"><option value="">Select…</option><option value="IN">India</option><option value="US">United States</option></select>
+  <label for="why">Why do you want to join Initech?</label><textarea id="why"></textarea>
+  <label><input type="checkbox" id="consent"> I agree to the privacy policy</label>
+</form>
+<!-- Lever-like: wrapping label + name only -->
+<form id="lever">
+  <label>Full name<input name="name"></label>
+  <label>LinkedIn URL<input name="urls[LinkedIn]"></label>
+  <label>Current company<input name="org"></label>
+</form>
+<!-- Workday-like: aria-labelledby + previous-sibling text -->
+<form id="wd">
+  <div id="np-l">Notice Period</div><input aria-labelledby="np-l" data-automation-id="np">
+  <div><div>Expected CTC</div><input id="ectc"></div>
+  <fieldset><legend>Are you willing to relocate?</legend>
+    <label><input type="radio" name="reloc" value="y"> Yes</label>
+    <label><input type="radio" name="reloc" value="n"> No</label></fieldset>
+  <div contenteditable="true" aria-label="Summary" id="summary"></div>
+</form>
+<pre id="results"></pre>
+
+<script src="../../extension/lib/util.js"></script>
+<script src="../../extension/lib/profile.js"></script>
+<script src="../../extension/lib/matcher.js"></script>
+<script src="../../extension/content/extract.js"></script>
+<script src="../../extension/content/fill.js"></script>
+<script>
+(async () => {
+  const results = [];
+  const check = (name, cond) => results.push(`${cond ? "PASS" : "FAIL"} ${name}`);
+  const $ = (s) => document.querySelector(s);
+  const inputEvents = [];
+  $("#first_name").addEventListener("input", (e) => inputEvents.push(e.target.value));
+
+  const profile = JobPilot.profile.normalizeProfile({
+    basics: { firstName: "Asha", lastName: "Verma", email: "asha@example.com", phone: "+91 98765 43210",
+      linkedin: "https://linkedin.com/in/asha", country: "India", noticePeriod: "30 days", expectedCtc: "", summary: "Platform engineer." },
+    experience: [{ company: "Acme Corp", title: "Senior DevOps Engineer", start: "2021", end: "Present", bullets: [] }],
+  });
+
+  const scan = JobPilot.content.scan({ profile });
+  check("JD from JSON-LD", scan.jd && scan.jd.source === "jsonld" && scan.jd.text.includes("Kubernetes"));
+  check("company from JSON-LD", scan.company === "Initech");
+  check("title from JSON-LD", scan.title === "Platform Engineer");
+  check("free-text question collected", scan.questions.some((q) => q.question.startsWith("Why do you want to join")));
+  check("radio question collected with options", scan.questions.some((q) => q.type === "radio" && q.options.join() === "Yes,No"));
+  check("empty sensitive field asked (Expected CTC)", scan.questions.some((q) => q.question === "Expected CTC"));
+  check("filled profile field not asked (First Name)", !scan.questions.some((q) => q.question.startsWith("First Name")));
+
+  const pdfB64 = JobPilot.util.bytesToBase64(new TextEncoder().encode("%PDF-1.7 test"));
+  const answers = [
+    { question: "Why do you want to join Initech?", answer: "I like platforms.", sensitive: false },
+    { question: "Are you willing to relocate?", answer: "Yes", sensitive: true },
+    { question: "Expected CTC", answer: "40 LPA", sensitive: true },
+  ];
+  const report = JobPilot.content.autofill({ profile, answers, pdf: { base64: pdfB64, name: "cv.pdf" } });
+
+  check("first name filled", $("#first_name").value === "Asha");
+  check("React-style input event fired", inputEvents.includes("Asha"));
+  check("email filled", $("#email").value === "asha@example.com");
+  check("keeps user-typed values", $("#phone").value === "+1 555 0100" && report.kept >= 1);
+  check("select by option text", $("#country").value === "IN");
+  check("free-text answer filled", $("#why").value === "I like platforms.");
+  check("checkbox untouched", $("#consent").checked === false);
+  check("lever full name", document.querySelector('[name="name"]').value === "Asha Verma");
+  check("lever linkedin", document.querySelector('[name="urls[LinkedIn]"]').value === "https://linkedin.com/in/asha");
+  check("lever current company derived", document.querySelector('[name="org"]').value === "Acme Corp");
+  check("aria-labelledby notice period", document.querySelector('[data-automation-id="np"]').value === "30 days");
+  check("sibling-text expected CTC from answers", $("#ectc").value === "40 LPA");
+  check("radio answered", document.querySelector('input[name="reloc"][value="y"]').checked);
+  check("contenteditable summary", $("#summary").textContent === "Platform engineer.");
+  check("resume attached (hidden input)", $("#resume").files.length === 1 && $("#resume").files[0].name === "cv.pdf");
+  check("cover letter not attached", $("#cover").files.length === 0);
+  check("report counts sensitive", report.sensitive >= 2);
+  check("report fileAttached", report.fileAttached === true);
+  check("highlight applied", $("#email").style.outline.includes("solid"));
+
+  const again = JobPilot.content.autofill({ profile, answers, pdf: null });
+  check("re-run refills own fields (not counted as kept)", $("#first_name").value === "Asha" && again.filled >= 1);
+
+  const failed = results.filter((r) => r.startsWith("FAIL"));
+  document.getElementById("results").textContent = results.join("\n");
+  document.title = failed.length ? `FAIL ${failed.length}/${results.length}` : `PASS ${results.length}/${results.length}`;
+})().catch((e) => { document.title = "ERROR " + e.message; document.getElementById("results").textContent = e.stack; });
+</script>
+</body></html>
