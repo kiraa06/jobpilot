@@ -1,5 +1,55 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>JobPilot Settings</title></head>
-<body>
-  <p>Settings arrive in a later task.</p>
+<html lang="en"><head><meta charset="utf-8"><title>JobPilot Settings</title>
+<link rel="stylesheet" href="../styles/tokens.css"><link rel="stylesheet" href="options.css"></head>
+<body><main>
+  <h1>JobPilot settings</h1>
+  <p class="muted">Everything here stays on this Mac.</p>
+
+  <section class="card">
+    <h2>1 · Helper</h2>
+    <p id="helper-status" class="muted">Checking…</p>
+    <button id="ping">Check again</button>
+  </section>
+
+  <section class="card">
+    <h2>2 · Your CV</h2>
+    <p class="muted">Pick your CV PDF. Claude reads it once and turns it into a profile you can edit below.</p>
+    <input type="file" id="cv-file" accept="application/pdf">
+    <button id="import" class="primary" disabled>Import CV</button>
+    <p id="import-status" class="muted"></p>
+  </section>
+
+  <section class="card">
+    <h2>3 · Claude session</h2>
+    <p class="muted">The Claude Code session that knows your career. Run <code>claude --resume</code> in Terminal to find its ID — pasting the whole command is fine. JobPilot works on a fork, so the original session is never changed.</p>
+    <input id="session" placeholder="f6c115bd-98ae-4b8e-8a2e-7b54b5580e52" spellcheck="false">
+    <button id="save-session">Save</button>
+    <p id="session-status" class="muted"></p>
+  </section>
+
+  <section class="card">
+    <h2>4 · Details your CV doesn't say</h2>
+    <div class="grid">
+      <label>Notice period<input data-basic="noticePeriod" placeholder="30 days"></label>
+      <label>Current CTC<input data-basic="currentCtc" placeholder="₹ 30 LPA"></label>
+      <label>Expected CTC<input data-basic="expectedCtc" placeholder="₹ 40 LPA"></label>
+      <label>Work authorization<input data-basic="workAuthorization" placeholder="Indian citizen; no sponsorship needed"></label>
+      <label>Years of experience<input data-basic="yearsExperience" placeholder="8"></label>
+      <label>City<input data-basic="city" placeholder="Bengaluru"></label>
+    </div>
+    <button id="save-basics">Save details</button>
+    <p id="basics-status" class="muted"></p>
+  </section>
+
+  <section class="card">
+    <h2>5 · Full profile (JSON)</h2>
+    <p class="muted">Fix anything the import got wrong. This is what Autofill and Magic Edit use.</p>
+    <textarea id="profile-json" spellcheck="false" rows="18"></textarea>
+    <button id="save-profile">Save profile</button>
+    <p id="profile-status" class="muted"></p>
+  </section>
+</main>
+<script src="../lib/util.js"></script>
+<script src="../lib/profile.js"></script>
+<script src="options.js"></script>
 </body></html>
