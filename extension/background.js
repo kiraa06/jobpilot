@@ -140,23 +140,33 @@ function safePdfName(name) {
 }
 
 async function magicConfirm(tabId, pdf) {
-  if (confirming.has(tabId)) return fail("NO_REVIEW", "Nothing to confirm — run Magic Edit first.");
+  const noReview = { ...fail("NO_REVIEW", "Nothing to confirm — run Magic Edit first."), downloaded: false };
+  if (confirming.has(tabId)) return noReview;
   confirming.add(tabId); // claim before any await so concurrent confirms can't both pass
   let res;
   let job;
+  let downloaded = false;
   try {
     job = await session.get(`job:${tabId}`);
-    if (job?.state !== "review") return fail("NO_REVIEW", "Nothing to confirm — run Magic Edit first.");
+    if (job?.state !== "review") return noReview;
     await session.set(`job:${tabId}`, { ...job, state: "confirming" }); // a second confirm now fails
     const { tailoredProfile, answers, company, role } = job.result;
     const name = safePdfName(pdf?.name);
     const safePdf = { base64: pdf.base64, name };
     await session.set(`tailored:${tabId}`, { profile: tailoredProfile, answers, pdf: safePdf, company, role });
-    await chrome.downloads.download({
-      url: `data:application/pdf;base64,${pdf.base64}`,
-      filename: `JobPilot/${name}`,
-      conflictAction: "uniquify",
-    });
+    try {
+      await chrome.downloads.download({
+        url: `data:application/pdf;base64,${pdf.base64}`,
+        filename: `JobPilot/${name}`,
+        conflictAction: "uniquify",
+      });
+      downloaded = true;
+    } catch (e) {
+      await session.remove(`tailored:${tabId}`);
+      const error = { code: "DOWNLOAD_FAILED", message: `Couldn't save the PDF (${e.message || e}).` };
+      await session.set(`job:${tabId}`, { state: "error", error });
+      return { ok: false, error, downloaded: false };
+    }
     res = await autofill(tabId);
   } catch (e) {
     res = fail(e.code || "EXTENSION_ERROR", e.message || String(e));
@@ -169,7 +179,7 @@ async function magicConfirm(tabId, pdf) {
     report: res.ok ? res.data : null,
     fillError: res.ok ? null : res.error,
   });
-  return res;
+  return res.ok ? ok({ ...res.data, downloaded: true }) : { ...res, downloaded };
 }
 
 async function importCv({ pdfBase64, fileName }) {

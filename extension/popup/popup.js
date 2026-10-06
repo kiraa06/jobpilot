@@ -20,18 +20,19 @@ function showError(error) {
   status(ERROR_HINTS[error.code] || error.message || "Something went sideways.", "error");
 }
 
-function fillList(container, items, render = (x) => x) {
+function fillList(container, items, render) {
   const ul = container.querySelector("ul");
   ul.replaceChildren(...items.map((item) => {
     const li = document.createElement("li");
-    const v = render(item);
-    if (typeof v === "string") li.textContent = v; else li.append(...v);
+    const v = render === undefined ? item : render(item);
+    if (Array.isArray(v)) li.append(...v); else li.textContent = String(v);
     return li;
   }));
   container.classList.toggle("hidden", items.length === 0);
 }
 
 function startConfirming() {
+  clearInterval(quipTimer);
   show("running");
   $("quip").textContent = "Making your PDF…";
   $("safe").classList.add("hidden");
@@ -39,6 +40,7 @@ function startConfirming() {
 }
 
 function startRunning(startedAt) {
+  clearInterval(quipTimer);
   show("running");
   $("safe").classList.remove("hidden");
   $("cancel").classList.remove("hidden");
@@ -73,24 +75,53 @@ function renderReview(result) {
 }
 
 async function loadFonts() {
-  const get = async (f) => new Uint8Array(await (await fetch(chrome.runtime.getURL(`vendor/fonts/${f}`))).arrayBuffer());
-  return { regular: await get("Lato-Regular.ttf"), bold: await get("Lato-Bold.ttf") };
+  const get = async (f) => {
+    const r = await fetch(chrome.runtime.getURL(`vendor/fonts/${f}`));
+    if (!r.ok) throw new Error("font");
+    return new Uint8Array(await r.arrayBuffer());
+  };
+  try { return { regular: await get("Lato-Regular.ttf"), bold: await get("Lato-Bold.ttf") }; }
+  catch (_) { throw new Error("Couldn't load the CV font — reload the extension."); }
 }
 
+let confirmInFlight = false;
+
 async function confirmMagic() {
-  const job = (await chrome.storage.session.get(`job:${tabId}`))[`job:${tabId}`];
+  if (confirmInFlight) return;
+  confirmInFlight = true;
   $("confirm").disabled = true;
-  status("Rendering your shiny new PDF…");
   try {
-    const out = await JobPilot.cvPdf.buildCvPdf(JobPilot.profile.normalizeProfile(job.result.tailoredProfile),
-      { PDFLib: window.PDFLib, fontkit: window.fontkit, fonts: await loadFonts() });
-    const name = JobPilot.util.pdfFileName(job.result.company, job.result.role, new Date());
-    const res = await send({ type: "magic:confirm", tabId, pdf: { base64: JobPilot.util.bytesToBase64(out.bytes), name } });
-    const saved = `Saved Downloads/JobPilot/${name}.`;
+    const job = (await chrome.storage.session.get(`job:${tabId}`))[`job:${tabId}`];
+    if (!job?.result) {
+      show("main");
+      status("That review expired — run Magic Edit again.", "error");
+      return;
+    }
+    status("Rendering your shiny new PDF…");
+    let out, name;
+    try {
+      out = await JobPilot.cvPdf.buildCvPdf(JobPilot.profile.normalizeProfile(job.result.tailoredProfile),
+        { PDFLib: window.PDFLib, fontkit: window.fontkit, fonts: await loadFonts() });
+      name = JobPilot.util.pdfFileName(job.result.company, job.result.role, new Date());
+    } catch (e) {
+      status(/^Couldn't load/.test(e.message) ? e.message : `PDF failed: ${e.message}`, "error");
+      $("confirm").disabled = false;
+      return;
+    }
+    let res;
+    try {
+      res = await send({ type: "magic:confirm", tabId, pdf: { base64: JobPilot.util.bytesToBase64(out.bytes), name } });
+    } catch (_) {
+      status("PDF built, but JobPilot's background stopped — try Make PDF again.", "error");
+      $("confirm").disabled = false;
+      return;
+    }
     show("main");
     await renderMode();
-    if (!res.ok) { // the PDF was still downloaded
-      status(`${saved} ${ERROR_HINTS[res.error.code] || res.error.message || "Autofill failed."}`, "error");
+    const saved = (res?.ok ? res.data?.downloaded : res?.downloaded) ? `Saved Downloads/JobPilot/${name}.` : "";
+    if (!res?.ok) {
+      status(`${saved} ${ERROR_HINTS[res?.error?.code] || res?.error?.message || "Autofill failed."}`.trim(), "error");
+      send({ type: "job:clear", tabId });
       return;
     }
     const trimmed = out.trimmed?.length ? ` Trimmed to 2 pages (${out.trimmed.length} cuts).` : "";
@@ -99,9 +130,8 @@ async function confirmMagic() {
       $("status").textContent += ` Heads up: still ${out.pages} pages — trim your profile in Settings.`;
       $("status").className = "warn";
     }
-  } catch (e) {
-    status(`PDF failed: ${e.message}`, "error");
-    $("confirm").disabled = false;
+  } finally {
+    confirmInFlight = false;
   }
 }
 
@@ -129,20 +159,27 @@ async function renderMode() {
 }
 
 async function init() {
-  [{ id: tabId }] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const { profile } = await chrome.storage.local.get("profile");
-  if (!profile) return show("setup");
-  const job = (await chrome.storage.session.get(`job:${tabId}`))[`job:${tabId}`];
-  await renderMode();
-  applyJob(job, true);
+  try {
+    [{ id: tabId }] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const { profile } = await chrome.storage.local.get("profile");
+    if (!profile) return show("setup");
+    const job = (await chrome.storage.session.get(`job:${tabId}`))[`job:${tabId}`];
+    await renderMode();
+    await applyJob(job, true);
+  } catch (e) {
+    show("main");
+    status(`Couldn't start JobPilot: ${e.message || e}`, "error");
+  }
 }
 
-function applyJob(job, initial = false) {
+async function applyJob(job, initial = false) {
   if (!job) return show("main");
   if (job.state === "done") {
     show("main");
     if (initial && job.fillError) {
-      showError(job.fillError);
+      const t = (await chrome.storage.session.get(`tailored:${tabId}`))[`tailored:${tabId}`];
+      const saved = t?.pdf?.name ? `Saved Downloads/JobPilot/${t.pdf.name}. ` : "";
+      status(`${saved}${ERROR_HINTS[job.fillError.code] || job.fillError.message || "Autofill failed."}`, "error");
       send({ type: "job:clear", tabId });
     }
     return;

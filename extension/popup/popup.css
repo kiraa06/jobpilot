@@ -12,15 +12,15 @@ section { margin-bottom: 10px; }
 .card ul { margin: 0; padding-left: 18px; }
 .card.warn { border-color: var(--warn); }
 .card.note h3 { color: var(--muted); }
-#answers li span { color: var(--warn); font-size: 11px; margin-left: 4px; }
+#answers li span { color: var(--warn-text); font-size: 11px; margin-left: 4px; }
 #running { text-align: center; }
 .spinner { width: 26px; height: 26px; margin: 4px auto 8px; border-radius: 50%;
   border: 3px solid var(--border); border-top-color: var(--brand); animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 #status { min-height: 1em; margin: 6px 0 0; font-size: 12px; }
-#status.error { color: var(--danger); }
-#status.ok { color: var(--ok); }
+#status.error { color: var(--danger-text); }
+#status.ok { color: var(--ok-text); }
 
 .mode-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; margin: 4px 0 0; }
 button.link { background: none; border: 0; padding: 0; color: var(--brand); text-decoration: underline; font-size: 11.5px; }
-#status.warn { color: var(--warn); }
+#status.warn { color: var(--warn-text); }
