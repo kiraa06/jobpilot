@@ -47,14 +47,14 @@ test("unicode renders and emoji are stripped", async () => {
 
 test("long profile is trimmed to two pages", async () => {
   const p = structuredClone(base);
-  p.experience = Array.from({ length: 9 }, (_, i) => ({
+  p.experience = Array.from({ length: 20 }, (_, i) => ({
     company: `Company ${i}`, title: "Engineer", location: "", start: `${2010 + i}`, end: `${2011 + i}`,
     bullets: Array.from({ length: 9 }, (_, j) => `Delivered meaningful outcome number ${j} with a fairly long description that wraps onto a second line of text`),
   }));
   const out = await buildCvPdf(p, deps);
   assert.ok(out.pages <= 2, `got ${out.pages} pages`);
   assert.ok(out.trimmed.length > 0);
-  assert.equal(p.experience[8].bullets.length, 9, "input profile must not be mutated");
+  assert.equal(p.experience[19].bullets.length, 9, "input profile must not be mutated");
 });
 
 test("wrapText respects width and hard-breaks long words", async () => {
@@ -100,4 +100,25 @@ test("overflow flag indicates when content exceeds maxPages", async () => {
   }));
   const out2 = await buildCvPdf(p, deps, { maxPages: 2 });
   assert.equal(out2.pages <= 2, true, "long profile trimmed to fit in maxPages");
+});
+
+test("glyph filter handles unsupported characters without throwing", async () => {
+  const p = structuredClone(base);
+  p.basics.summary = `Ships fast with private-use char \u{10FFFD}`;
+  p.experience[0].bullets = [`Outcome with unsupported \u{10FFFD} char`];
+  p.projects[0].name = `Project\u{10FFFD}Name`;
+  const out = await buildCvPdf(p, deps);
+  assert.ok(out.bytes.length > 0, "PDF generated without throwing");
+  assert.equal(out.pages, 1, "PDF has expected pages");
+});
+
+test("overflow with maxPages: 2", async () => {
+  const p = structuredClone(base);
+  p.experience = Array.from({ length: 50 }, (_, i) => ({
+    company: `Company ${i}`, title: "Engineer", location: "", start: `${2010 + i}`, end: `${2011 + i}`,
+    bullets: Array.from({ length: 9 }, (_, j) => `Delivered meaningful outcome number ${j} with a fairly long description that wraps onto a second line of text`),
+  }));
+  const out = await buildCvPdf(p, deps, { maxPages: 2 });
+  assert.equal(out.overflow, true, "50-company profile overflows maxPages: 2");
+  assert.ok(out.trimmed.length > 0, "trimmed contains trim notes");
 });

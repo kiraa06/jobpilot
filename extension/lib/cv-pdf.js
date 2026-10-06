@@ -14,17 +14,19 @@
       .trim();
   }
 
-  function fitText(text, font, size, maxWidth) {
-    const sanitized = sanitize(text);
+  function fitText(text, font, size, maxWidth, getGlyphSafeFilter) {
+    const filter = getGlyphSafeFilter || (s => sanitize(s));
+    const sanitized = filter(text);
     if (font.widthOfTextAtSize(sanitized, size) <= maxWidth) return sanitized;
     let cut = sanitized.length - 1;
-    while (cut > 0 && font.widthOfTextAtSize(sanitized.slice(0, cut) + "…", size) > maxWidth) cut--;
+    while (cut > 0 && font.widthOfTextAtSize(filter(sanitized.slice(0, cut)) + "…", size) > maxWidth) cut--;
     return sanitized.slice(0, cut) + "…";
   }
 
-  function wrapText(text, font, size, maxWidth, fontKitFont = null) {
+  function wrapText(text, font, size, maxWidth, getGlyphSafeFilter) {
+    const filter = getGlyphSafeFilter || (s => sanitize(s));
     const lines = [];
-    for (const para of sanitize(text).split(/\n+/)) {
+    for (const para of filter(text).split(/\n+/)) {
       let line = "";
       for (const word of para.split(/\s+/).filter(Boolean)) {
         const candidate = line ? `${line} ${word}` : word;
@@ -52,34 +54,49 @@
     doc.registerFontkit(fontkit);
     const regular = await doc.embedFont(fonts.regular, { subset: true });
     const bold = await doc.embedFont(fonts.bold, { subset: true });
-    const regularFontkit = fontkit.create(fonts.regular);
-    const boldFontkit = fontkit.create(fonts.bold);
 
-    const filterGlyphs = (text, font) => {
-      return [...text].filter(c => font.hasGlyphForCodePoint(c.charCodeAt(0))).join("");
+    // Create fontkit fonts for glyph filtering
+    const fkFonts = new WeakMap();
+    fkFonts.set(regular, fontkit.create(fonts.regular));
+    fkFonts.set(bold, fontkit.create(fonts.bold));
+
+    // Central glyph filter: sanitize + filter chars without glyphs
+    const glyphSafe = (text, pdfFont = regular) => {
+      const sanitized = sanitize(text);
+      const fkFont = fkFonts.get(pdfFont);
+      let filtered = "";
+      for (const ch of sanitized) {
+        if (fkFont.hasGlyphForCodePoint(ch.codePointAt(0))) {
+          filtered += ch;
+        }
+      }
+      return filtered;
     };
 
+
     const b = profile.basics;
-    doc.setTitle(sanitize(`${b.firstName} ${b.lastName} — CV`));
+    doc.setTitle(glyphSafe(`${b.firstName} ${b.lastName} — CV`, bold));
     let page = doc.addPage(PAGE);
     let y = PAGE[1] - MARGIN;
 
     const ensure = (h) => { if (y - h < MARGIN) { page = doc.addPage(PAGE); y = PAGE[1] - MARGIN; } };
-    const text = (t, x, size, font, c = INK, fontKitFont = null) => {
-      let s = sanitize(t);
-      if (fontKitFont) s = filterGlyphs(s, fontKitFont);
+    const text = (t, x, size, font, c = INK) => {
+      const s = glyphSafe(t, font);
       page.drawText(s, { x, y, size, font, color: color(c) });
     };
-    const para = (t, size, font, c = INK, indent = 0, lead = 1.35, fontKitFont = null) => {
-      for (const line of wrapText(t, font, size, WIDTH - indent, fontKitFont)) {
+    const para = (t, size, font, c = INK, indent = 0, lead = 1.35) => {
+      const glyphSafeForFont = (text) => glyphSafe(text, font);
+      for (const line of wrapText(t, font, size, WIDTH - indent, glyphSafeForFont)) {
         ensure(size * lead);
         y -= size * lead;
-        text(line, MARGIN + indent, size, font, c, fontKitFont);
+        text(line, MARGIN + indent, size, font, c);
       }
     };
     const rightText = (t, size, c = MUTED) => {
-      const s = fitText(t, regular, size, WIDTH * 0.45);
-      page.drawText(filterGlyphs(s, regularFontkit), { x: PAGE[0] - MARGIN - regular.widthOfTextAtSize(s, size), y, size, font: regular, color: color(c) });
+      const glyphSafeForFont = (text) => glyphSafe(text, regular);
+      const s = fitText(t, regular, size, WIDTH * 0.45, glyphSafeForFont);
+      const width = regular.widthOfTextAtSize(s, size);
+      page.drawText(s, { x: PAGE[0] - MARGIN - width, y, size, font: regular, color: color(c) });
     };
     const section = (title) => {
       ensure(40);
@@ -91,28 +108,28 @@
     };
     const bullets = (items) => {
       for (const item of items || []) {
-        const lines = wrapText(item, regular, 9.5, WIDTH - 12, regularFontkit);
+        const lines = wrapText(item, regular, 9.5, WIDTH - 12, (text) => glyphSafe(text, regular));
         lines.forEach((line, i) => {
           ensure(13);
           y -= 13;
           if (i === 0) text("•", MARGIN + 2, 9.5, regular, MUTED);
-          text(line, MARGIN + 12, 9.5, regular, INK, regularFontkit);
+          text(line, MARGIN + 12, 9.5, regular);
         });
       }
     };
     const dates = (e) => [e.start, e.end].filter(Boolean).join(" – ");
 
     // Header
-    const nameLines = wrapText(`${b.firstName} ${b.lastName}`.trim(), bold, 22, WIDTH, boldFontkit);
+    const nameLines = wrapText(`${b.firstName} ${b.lastName}`.trim(), bold, 22, WIDTH, (text) => glyphSafe(text, bold));
     for (const line of nameLines) {
       ensure(22 * 1.2);
       y -= 22 * 1.2;
-      text(line, MARGIN, 22, bold, INK, boldFontkit);
+      text(line, MARGIN, 22, bold, INK);
     }
-    if (b.headline) para(b.headline, 11, regular, ACCENT, 0, 1.35, regularFontkit);
+    if (b.headline) para(b.headline, 11, regular, ACCENT);
     const contact = [b.email, b.phone, b.location || [b.city, b.country].filter(Boolean).join(", "), b.linkedin, b.github, b.website]
       .filter(Boolean).join("  ·  ");
-    if (contact) para(contact, 9, regular, MUTED, 0, 1.35, regularFontkit);
+    if (contact) para(contact, 9, regular, MUTED);
 
     if (b.summary) { section("Summary"); para(b.summary, 10, regular); }
 
@@ -122,11 +139,12 @@
         ensure(40);
         y -= 15;
         const dateStr = dates(e);
-        const dateWidth = bold.widthOfTextAtSize(dateStr, 9);
+        const dateStrSafe = glyphSafe(dateStr, bold);
+        const dateWidth = bold.widthOfTextAtSize(dateStrSafe, 9);
         rightText(dateStr, 9);
-        const titleFitted = fitText(e.title, bold, 10.5, WIDTH - dateWidth - 12);
-        text(titleFitted, MARGIN, 10.5, bold, INK, boldFontkit);
-        para([e.company, e.location].filter(Boolean).join(" · "), 9.5, regular, MUTED, 0, 1.3, regularFontkit);
+        const titleFitted = fitText(e.title, bold, 10.5, WIDTH - dateWidth - 12, (text) => glyphSafe(text, bold));
+        text(titleFitted, MARGIN, 10.5, bold, INK);
+        para([e.company, e.location].filter(Boolean).join(" · "), 9.5, regular, MUTED, 0, 1.3);
         bullets(e.bullets);
         y -= 3;
       }
@@ -134,7 +152,7 @@
 
     if (profile.skills.length) {
       section("Skills");
-      for (const g of profile.skills) para(`${g.group}: ${(g.items || []).join(", ")}`, 9.5, regular, INK, 0, 1.35, regularFontkit);
+      for (const g of profile.skills) para(`${g.group}: ${(g.items || []).join(", ")}`, 9.5, regular, INK, 0, 1.35);
     }
 
     if (profile.projects.length) {
@@ -143,11 +161,12 @@
         ensure(30);
         y -= 14;
         const linkStr = p.link || "";
-        const linkWidth = linkStr ? regular.widthOfTextAtSize(linkStr, 8.5) : 0;
+        const linkStrSafe = glyphSafe(linkStr, regular);
+        const linkWidth = linkStr ? regular.widthOfTextAtSize(linkStrSafe, 8.5) : 0;
         if (p.link) rightText(p.link, 8.5);
-        const nameFitted = fitText(p.name, bold, 10, WIDTH - linkWidth - 12);
-        text(nameFitted, MARGIN, 10, bold, INK, boldFontkit);
-        if (p.description) para(p.description, 9.5, regular, INK, 0, 1.35, regularFontkit);
+        const nameFitted = fitText(p.name, bold, 10, WIDTH - linkWidth - 12, (text) => glyphSafe(text, bold));
+        text(nameFitted, MARGIN, 10, bold, INK);
+        if (p.description) para(p.description, 9.5, regular, INK, 0, 1.35);
         bullets(p.bullets);
       }
     }
@@ -158,17 +177,18 @@
         ensure(30);
         y -= 14;
         const dateStr = dates(e);
-        const dateWidth = regular.widthOfTextAtSize(dateStr, 9);
+        const dateStrSafe = glyphSafe(dateStr, regular);
+        const dateWidth = regular.widthOfTextAtSize(dateStrSafe, 9);
         rightText(dateStr, 9);
-        const degreeFitted = fitText([e.degree, e.field].filter(Boolean).join(", "), bold, 10, WIDTH - dateWidth - 12);
-        text(degreeFitted, MARGIN, 10, bold, INK, boldFontkit);
-        para([e.institution, e.grade].filter(Boolean).join(" · "), 9.5, regular, MUTED, 0, 1.3, regularFontkit);
+        const degreeFitted = fitText([e.degree, e.field].filter(Boolean).join(", "), bold, 10, WIDTH - dateWidth - 12, (text) => glyphSafe(text, bold));
+        text(degreeFitted, MARGIN, 10, bold, INK);
+        para([e.institution, e.grade].filter(Boolean).join(" · "), 9.5, regular, MUTED, 0, 1.3);
       }
     }
 
     if (profile.certifications.length) {
       section("Certifications");
-      for (const c of profile.certifications) para([c.name, c.issuer, c.date].filter(Boolean).join(" · "), 9.5, regular, INK, 0, 1.35, regularFontkit);
+      for (const c of profile.certifications) para([c.name, c.issuer, c.date].filter(Boolean).join(" · "), 9.5, regular, INK, 0, 1.35);
     }
     return doc;
   }
@@ -228,6 +248,20 @@
       } else {
         left = mid + 1;
       }
+    }
+
+    // If no k fits, use k=K (all trims) with overflow: true
+    if (bestK === 0 && bestDoc.getPageCount() > maxPages) {
+      const pAll = structuredClone(profile);
+      const notes = [];
+      for (let i = 0; i < K; i++) {
+        const note = trimOnce(pAll);
+        if (note) notes.push(note);
+      }
+      const docAll = await render(pAll, deps);
+      const trimmed = [...new Set(notes)];
+      const pages = docAll.getPageCount();
+      return { bytes: await docAll.save(), pages, trimmed, overflow: pages > maxPages };
     }
 
     // Render at bestK and collect trim notes
