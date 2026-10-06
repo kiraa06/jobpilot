@@ -14,33 +14,48 @@
       .trim();
   }
 
-  function fitText(text, font, size, maxWidth, getGlyphSafeFilter) {
-    const filter = getGlyphSafeFilter || (s => sanitize(s));
-    const sanitized = filter(text);
-    if (font.widthOfTextAtSize(sanitized, size) <= maxWidth) return sanitized;
-    let cut = sanitized.length - 1;
-    while (cut > 0 && font.widthOfTextAtSize(filter(sanitized.slice(0, cut)) + "…", size) > maxWidth) cut--;
-    return sanitized.slice(0, cut) + "…";
+  // pdf-lib font -> fontkit font, so we can ask which code points a font really has.
+  const FK = new WeakMap();
+  function registerFont(pdfFont, fkFont) { FK.set(pdfFont, fkFont); return pdfFont; }
+
+  // THE text filter: sanitize, then drop every code point the font lacks.
+  // All drawText / widthOfTextAtSize input in this file comes from here.
+  function glyphSafe(text, font) {
+    const s = sanitize(text);
+    const fk = FK.get(font);
+    if (!fk) return s;
+    let out = "";
+    for (const ch of s) if (fk.hasGlyphForCodePoint(ch.codePointAt(0))) out += ch;
+    return out;
   }
 
-  function wrapText(text, font, size, maxWidth, getGlyphSafeFilter) {
-    const filter = getGlyphSafeFilter || (s => sanitize(s));
+  function fitText(text, font, size, maxWidth) {
+    const s = glyphSafe(text, font);
+    if (font.widthOfTextAtSize(s, size) <= maxWidth) return s;
+    const chars = Array.from(s);
+    let cut = chars.length - 1;
+    while (cut > 0 && font.widthOfTextAtSize(glyphSafe(chars.slice(0, cut).join("") + "…", font), size) > maxWidth) cut--;
+    return glyphSafe(chars.slice(0, cut).join("") + "…", font);
+  }
+
+  function wrapText(text, font, size, maxWidth) {
+    const w = (t) => font.widthOfTextAtSize(t, size);
     const lines = [];
-    for (const para of filter(text).split(/\n+/)) {
+    for (const para of glyphSafe(text, font).split(/\n+/)) {
       let line = "";
       for (const word of para.split(/\s+/).filter(Boolean)) {
         const candidate = line ? `${line} ${word}` : word;
-        if (font.widthOfTextAtSize(candidate, size) <= maxWidth) { line = candidate; continue; }
+        if (w(candidate) <= maxWidth) { line = candidate; continue; }
         if (line) lines.push(line);
         line = "";
-        let rest = word;
-        while (font.widthOfTextAtSize(rest, size) > maxWidth) {
+        let rest = Array.from(word);
+        while (w(rest.join("")) > maxWidth && rest.length > 1) {
           let cut = rest.length - 1;
-          while (cut > 1 && font.widthOfTextAtSize(rest.slice(0, cut), size) > maxWidth) cut--;
-          lines.push(rest.slice(0, cut));
+          while (cut > 1 && w(rest.slice(0, cut).join("")) > maxWidth) cut--;
+          lines.push(rest.slice(0, cut).join(""));
           rest = rest.slice(cut);
         }
-        line = rest;
+        line = rest.join("");
       }
       if (line) lines.push(line);
     }
@@ -55,24 +70,8 @@
     const regular = await doc.embedFont(fonts.regular, { subset: true });
     const bold = await doc.embedFont(fonts.bold, { subset: true });
 
-    // Create fontkit fonts for glyph filtering
-    const fkFonts = new WeakMap();
-    fkFonts.set(regular, fontkit.create(fonts.regular));
-    fkFonts.set(bold, fontkit.create(fonts.bold));
-
-    // Central glyph filter: sanitize + filter chars without glyphs
-    const glyphSafe = (text, pdfFont = regular) => {
-      const sanitized = sanitize(text);
-      const fkFont = fkFonts.get(pdfFont);
-      let filtered = "";
-      for (const ch of sanitized) {
-        if (fkFont.hasGlyphForCodePoint(ch.codePointAt(0))) {
-          filtered += ch;
-        }
-      }
-      return filtered;
-    };
-
+    registerFont(regular, fontkit.create(fonts.regular));
+    registerFont(bold, fontkit.create(fonts.bold));
 
     const b = profile.basics;
     doc.setTitle(glyphSafe(`${b.firstName} ${b.lastName} — CV`, bold));
@@ -81,22 +80,26 @@
 
     const ensure = (h) => { if (y - h < MARGIN) { page = doc.addPage(PAGE); y = PAGE[1] - MARGIN; } };
     const text = (t, x, size, font, c = INK) => {
-      const s = glyphSafe(t, font);
-      page.drawText(s, { x, y, size, font, color: color(c) });
+      page.drawText(glyphSafe(t, font), { x, y, size, font, color: color(c) });
     };
     const para = (t, size, font, c = INK, indent = 0, lead = 1.35) => {
-      const glyphSafeForFont = (text) => glyphSafe(text, font);
-      for (const line of wrapText(t, font, size, WIDTH - indent, glyphSafeForFont)) {
+      for (const line of wrapText(t, font, size, WIDTH - indent)) {
         ensure(size * lead);
         y -= size * lead;
         text(line, MARGIN + indent, size, font, c);
       }
     };
-    const rightText = (t, size, c = MUTED) => {
-      const glyphSafeForFont = (text) => glyphSafe(text, regular);
-      const s = fitText(t, regular, size, WIDTH * 0.45, glyphSafeForFont);
-      const width = regular.widthOfTextAtSize(s, size);
-      page.drawText(s, { x: PAGE[0] - MARGIN - width, y, size, font: regular, color: color(c) });
+    // Row: right text (capped to 45% of WIDTH) is drawn first, then the left text
+    // is fitted to the space that remains.
+    const row = (left, leftFont, leftSize, right, rightSize) => {
+      let rightWidth = 0;
+      if (right) {
+        const s = fitText(right, regular, rightSize, WIDTH * 0.45);
+        rightWidth = regular.widthOfTextAtSize(s, rightSize);
+        page.drawText(s, { x: PAGE[0] - MARGIN - rightWidth, y, size: rightSize, font: regular, color: color(MUTED) });
+      }
+      const l = fitText(left, leftFont, leftSize, WIDTH - rightWidth - 12);
+      page.drawText(l, { x: MARGIN, y, size: leftSize, font: leftFont, color: color(INK) });
     };
     const section = (title) => {
       ensure(40);
@@ -108,8 +111,7 @@
     };
     const bullets = (items) => {
       for (const item of items || []) {
-        const lines = wrapText(item, regular, 9.5, WIDTH - 12, (text) => glyphSafe(text, regular));
-        lines.forEach((line, i) => {
+        wrapText(item, regular, 9.5, WIDTH - 12).forEach((line, i) => {
           ensure(13);
           y -= 13;
           if (i === 0) text("•", MARGIN + 2, 9.5, regular, MUTED);
@@ -120,7 +122,7 @@
     const dates = (e) => [e.start, e.end].filter(Boolean).join(" – ");
 
     // Header
-    const nameLines = wrapText(`${b.firstName} ${b.lastName}`.trim(), bold, 22, WIDTH, (text) => glyphSafe(text, bold));
+    const nameLines = wrapText(`${b.firstName} ${b.lastName}`.trim(), bold, 22, WIDTH);
     for (const line of nameLines) {
       ensure(22 * 1.2);
       y -= 22 * 1.2;
@@ -138,12 +140,7 @@
       for (const e of profile.experience) {
         ensure(40);
         y -= 15;
-        const dateStr = dates(e);
-        const dateStrSafe = glyphSafe(dateStr, bold);
-        const dateWidth = bold.widthOfTextAtSize(dateStrSafe, 9);
-        rightText(dateStr, 9);
-        const titleFitted = fitText(e.title, bold, 10.5, WIDTH - dateWidth - 12, (text) => glyphSafe(text, bold));
-        text(titleFitted, MARGIN, 10.5, bold, INK);
+        row(e.title, bold, 10.5, dates(e), 9);
         para([e.company, e.location].filter(Boolean).join(" · "), 9.5, regular, MUTED, 0, 1.3);
         bullets(e.bullets);
         y -= 3;
@@ -160,12 +157,7 @@
       for (const p of profile.projects) {
         ensure(30);
         y -= 14;
-        const linkStr = p.link || "";
-        const linkStrSafe = glyphSafe(linkStr, regular);
-        const linkWidth = linkStr ? regular.widthOfTextAtSize(linkStrSafe, 8.5) : 0;
-        if (p.link) rightText(p.link, 8.5);
-        const nameFitted = fitText(p.name, bold, 10, WIDTH - linkWidth - 12, (text) => glyphSafe(text, bold));
-        text(nameFitted, MARGIN, 10, bold, INK);
+        row(p.name, bold, 10, p.link, 8.5);
         if (p.description) para(p.description, 9.5, regular, INK, 0, 1.35);
         bullets(p.bullets);
       }
@@ -176,12 +168,7 @@
       for (const e of profile.education) {
         ensure(30);
         y -= 14;
-        const dateStr = dates(e);
-        const dateStrSafe = glyphSafe(dateStr, regular);
-        const dateWidth = regular.widthOfTextAtSize(dateStrSafe, 9);
-        rightText(dateStr, 9);
-        const degreeFitted = fitText([e.degree, e.field].filter(Boolean).join(", "), bold, 10, WIDTH - dateWidth - 12, (text) => glyphSafe(text, bold));
-        text(degreeFitted, MARGIN, 10, bold, INK);
+        row([e.degree, e.field].filter(Boolean).join(", "), bold, 10, dates(e), 9);
         para([e.institution, e.grade].filter(Boolean).join(" · "), 9.5, regular, MUTED, 0, 1.3);
       }
     }
@@ -216,68 +203,41 @@
   }
 
   async function buildCvPdf(profile, deps, { maxPages = 2 } = {}) {
-    // Check if original profile fits
-    const originalDoc = await render(structuredClone(profile), deps);
-    const originalPages = originalDoc.getPageCount();
-
-    if (originalPages <= maxPages) {
-      return { bytes: await originalDoc.save(), pages: originalPages, trimmed: [], overflow: false };
-    }
-
-    // Original exceeds maxPages - find maximum number of trim steps K
-    const cloneForK = structuredClone(profile);
-    let K = 0;
-    while (trimOnce(cloneForK)) K++;
-
-    // Binary search for smallest k in [1, K] that fits within maxPages
-    let bestK = 0;
-    let bestDoc = originalDoc;
-
-    let left = 1, right = K;
-    while (left <= right) {
-      const mid = Math.floor((left + right) / 2);
-      const pMid = structuredClone(profile);
-      for (let i = 0; i < mid; i++) trimOnce(pMid);
-      const docMid = await render(pMid, deps);
-      const pagesMid = docMid.getPageCount();
-
-      if (pagesMid <= maxPages) {
-        bestK = mid;
-        bestDoc = docMid;
-        right = mid - 1;
-      } else {
-        left = mid + 1;
-      }
-    }
-
-    // If no k fits, use k=K (all trims) with overflow: true
-    if (bestK === 0 && bestDoc.getPageCount() > maxPages) {
-      const pAll = structuredClone(profile);
+    const result = async (doc, notes) => {
+      const pages = doc.getPageCount();
+      return { bytes: await doc.save(), pages, trimmed: [...new Set(notes)], overflow: pages > maxPages };
+    };
+    const trimmedBy = (k) => {
+      const p = structuredClone(profile);
       const notes = [];
-      for (let i = 0; i < K; i++) {
-        const note = trimOnce(pAll);
-        if (note) notes.push(note);
-      }
-      const docAll = await render(pAll, deps);
-      const trimmed = [...new Set(notes)];
-      const pages = docAll.getPageCount();
-      return { bytes: await docAll.save(), pages, trimmed, overflow: pages > maxPages };
-    }
+      for (let i = 0; i < k; i++) notes.push(trimOnce(p));
+      return { p, notes };
+    };
 
-    // Render at bestK and collect trim notes
-    const pBest = structuredClone(profile);
-    const notes = [];
-    for (let i = 0; i < bestK; i++) {
-      const note = trimOnce(pBest);
-      if (note) notes.push(note);
-    }
+    const doc0 = await render(structuredClone(profile), deps);
+    if (doc0.getPageCount() <= maxPages) return result(doc0, []);
 
-    const trimmed = [...new Set(notes)];
-    const pages = bestDoc.getPageCount();
-    return { bytes: await bestDoc.save(), pages, trimmed, overflow: pages > maxPages };
+    let K = 0;
+    const probe = structuredClone(profile);
+    while (trimOnce(probe)) K++;
+
+    // Smallest k in [1, K] whose render fits (page count is monotone in k).
+    let lo = 1, hi = K, best = null;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const { p, notes } = trimmedBy(mid);
+      const doc = await render(p, deps);
+      if (doc.getPageCount() <= maxPages) { best = { doc, notes }; hi = mid - 1; }
+      else lo = mid + 1;
+    }
+    if (best) return result(best.doc, best.notes);
+
+    // Nothing fits: return the fully trimmed render, flagged as overflow.
+    const { p, notes } = trimmedBy(K);
+    return result(await render(p, deps), notes);
   }
 
-  const api = { buildCvPdf, wrapText, sanitize, fitText };
+  const api = { buildCvPdf, wrapText, sanitize, fitText, glyphSafe, registerFont };
   if (typeof module === "object" && module.exports) module.exports = api;
   else (root.JobPilot = root.JobPilot || {}).cvPdf = api;
 })(globalThis);
