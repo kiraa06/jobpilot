@@ -8,7 +8,10 @@ async function checkHelper() {
   try { res = await send({ type: "host:ping" }); } catch (e) { res = { ok: false }; }
   if (res && res.ok && res.data.claudeFound) say("helper-status", `✓ Helper v${res.data.version} · claude at ${res.data.claudeBin}`, "ok");
   else if (res && res.ok) say("helper-status", `Helper found, but claude isn't at ${res.data.claudeBin}. Re-run ./install.sh.`, "error");
-  else say("helper-status", "✗ Helper not found. In Terminal: cd ~/Projects/jobpilot && ./install.sh — then restart Arc.", "error");
+  else {
+    const why = res && res.error && res.error.message ? ` (${res.error.message})` : "";
+    say("helper-status", `✗ Helper not found. In Terminal: cd ~/Projects/jobpilot && ./install.sh — then restart Arc.${why}`, "error");
+  }
 }
 
 async function loadProfile() {
@@ -24,7 +27,7 @@ async function saveProfile(p) {
   await loadProfile();
 }
 
-// Parse the JSON editor; returns {value} or {error} (message to show).
+// The textarea is the single source of truth for the profile being edited.
 function parseEditor() {
   let v;
   try { v = JSON.parse($("profile-json").value); } catch (e) { return { error: `Not valid JSON: ${e.message}` }; }
@@ -32,28 +35,66 @@ function parseEditor() {
   return { value: v };
 }
 
+function syncInputsFromEditor() {
+  const parsed = parseEditor();
+  if (parsed.error) return;
+  const basics = JobPilot.profile.normalizeProfile(parsed.value).basics;
+  for (const input of document.querySelectorAll("[data-basic]")) input.value = basics[input.dataset.basic] || "";
+}
+
+for (const input of document.querySelectorAll("[data-basic]")) {
+  input.addEventListener("input", () => {
+    const parsed = parseEditor();
+    if (parsed.error) return say("basics-status", "Fix the JSON below first — your detail edits can't be applied yet.", "error");
+    const p = JobPilot.profile.normalizeProfile(parsed.value);
+    p.basics[input.dataset.basic] = input.value.trim();
+    const ta = $("profile-json"), top = ta.scrollTop;
+    ta.value = JSON.stringify({ ...parsed.value, basics: p.basics }, null, 2);
+    ta.scrollTop = top;
+    say("basics-status", "");
+  });
+}
+$("profile-json").addEventListener("change", syncInputsFromEditor);
+
+async function saveEditor(statusId) {
+  const parsed = parseEditor();
+  if (parsed.error) return say(statusId, parsed.error, "error");
+  try {
+    await saveProfile(parsed.value);
+    say(statusId, "✓ Saved.", "ok");
+  } catch (e) {
+    say(statusId, `Couldn't save: ${e.message}`, "error");
+  }
+}
+
+const MAX_PDF = 10 * 1024 * 1024;
 let importing = false;
 $("cv-file").onchange = () => { $("import").disabled = importing || !$("cv-file").files.length; };
 
 $("import").onclick = async () => {
   const file = $("cv-file").files[0];
   if (!file || importing) return;
+  if (file.size > MAX_PDF) return say("import-status", "That PDF is over 10 MB — export a smaller version.", "error");
+  if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name)) return say("import-status", "Pick a PDF file.", "error");
   importing = true;
   $("import").disabled = true;
-  say("import-status", "Reading your CV… (about 30–60 s)");
   try {
+    const { profile: existing } = await chrome.storage.local.get("profile");
+    if (existing && !confirm("Re-importing replaces your current profile with what Claude reads from this PDF. Details in section 4 are kept. Continue?")) {
+      return say("import-status", "");
+    }
+    say("import-status", "Reading your CV… (about 30–60 s)");
     const bytes = new Uint8Array(await file.arrayBuffer());
     const res = await send({ type: "cv:import", pdfBase64: JobPilot.util.bytesToBase64(bytes), fileName: file.name });
     if (!res || !res.ok) return say("import-status", (res && res.error && res.error.message) || "Import failed.", "error");
-    // Keep the extra details (notice period, CTC…) the user already entered.
+    // Deliberately entered section-4 values win over the CV's.
     const fresh = JobPilot.profile.normalizeProfile(res.data.profile);
     for (const input of document.querySelectorAll("[data-basic]")) {
-      const k = input.dataset.basic;
-      if (!fresh.basics[k] && input.value) fresh.basics[k] = input.value;
+      if (input.value.trim()) fresh.basics[input.dataset.basic] = input.value.trim();
     }
     await saveProfile(fresh);
     const roles = fresh.experience.length;
-    say("import-status", `✓ Imported ${fresh.basics.firstName || "you"} — ${roles} role${roles === 1 ? "" : "s"}. Check the details below.`, "ok");
+    say("import-status", `✓ Imported ${fresh.basics.firstName || "your CV"} — ${roles} role${roles === 1 ? "" : "s"}. Check the details below.`, "ok");
   } catch (e) {
     say("import-status", `Import failed: ${e.message}`, "error");
   } finally {
@@ -65,26 +106,17 @@ $("import").onclick = async () => {
 $("save-session").onclick = async () => {
   const id = JobPilot.util.parseSessionId($("session").value);
   if (!id) return say("session-status", "That doesn't look like a session ID (expected something like f6c115bd-98ae-…).", "error");
-  await chrome.storage.local.set({ sessionId: id });
-  $("session").value = id;
-  say("session-status", "✓ Saved.", "ok");
+  try {
+    await chrome.storage.local.set({ sessionId: id });
+    $("session").value = id;
+    say("session-status", "✓ Saved.", "ok");
+  } catch (e) {
+    say("session-status", `Couldn't save: ${e.message}`, "error");
+  }
 };
 
-$("save-basics").onclick = async () => {
-  const parsed = parseEditor();
-  if (parsed.error) return say("basics-status", parsed.error, "error");
-  const p = JobPilot.profile.normalizeProfile(parsed.value);
-  for (const input of document.querySelectorAll("[data-basic]")) p.basics[input.dataset.basic] = input.value.trim();
-  await saveProfile(p);
-  say("basics-status", "✓ Saved.", "ok");
-};
-
-$("save-profile").onclick = async () => {
-  const parsed = parseEditor();
-  if (parsed.error) return say("profile-status", parsed.error, "error");
-  await saveProfile(parsed.value);
-  say("profile-status", "✓ Saved.", "ok");
-};
+$("save-basics").onclick = () => saveEditor("basics-status");
+$("save-profile").onclick = () => saveEditor("profile-status");
 
 $("ping").onclick = checkHelper;
 checkHelper();
