@@ -31,7 +31,13 @@ def main():
     box = {}
 
     def work():
-        box["response"] = actions.handle(msg, config.load(), cancel)
+        try:
+            cfg = config.load()
+        except Exception as exc:
+            logging.exception("failed to load config")
+            box["response"] = actions.err("HOST_ERROR", f"{type(exc).__name__}: {exc}")
+            return
+        box["response"] = actions.handle(msg, cfg, cancel)
 
     def watch_stdin():
         # Extension disconnecting (EOF) or sending {"action":"cancel"} cancels the job.
