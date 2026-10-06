@@ -8,6 +8,7 @@
   ];
   const SKIP_INPUT_TYPES = new Set(["checkbox", "hidden", "submit", "button", "reset", "image", "password"]);
   const JD_HINT = /responsibilit|requirement|qualification|what you('|’)ll do|about the role|you will/i;
+  const MAX_JD = 20000;
   let counter = 0;
   const prefix = Math.random().toString(36).slice(2, 7);
 
@@ -91,11 +92,13 @@
           d.type = "radio";
           d.label = nearbyFor(el) || d.label;
           d.radios = [];
+          d.checked = "";
           radioGroups.set(key, d);
           out.push(d);
         }
         const group = radioGroups.get(key);
         group.radios.push(idOf(el));
+        if (el.checked) group.checked = idOf(el);
         group.options.push({ value: idOf(el), text: labelFor(el) || el.value });
         continue;
       }
@@ -105,8 +108,11 @@
   }
 
   function htmlToText(html) {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    return clean(doc.body.textContent);
+    const spaced = String(html || "").replace(/<(br\s*\/?|\/(p|li|div|h[1-6]|ul|ol|tr|section))>/gi, "$&\n");
+    const doc = new DOMParser().parseFromString(spaced, "text/html");
+    const text = clean(doc.body.textContent);
+    // double-encoded JSON-LD yields escaped tags after the first pass
+    return /<\/?(p|li|ul|br|div|strong)\b/i.test(text) && text !== clean(html) ? htmlToText(text) : text;
   }
 
   function findJobPosting(node) {
@@ -131,23 +137,24 @@
       title: textOf(doc.querySelector("h1")) || clean(doc.title),
       company: clean(doc.querySelector('meta[property="og:site_name"]')?.content),
     };
-    let best = "";
-    for (const sel of JD_SELECTORS) {
+    const smallest = (sel) => {
+      let pick = "";
       for (const el of doc.querySelectorAll(sel)) {
         const t = textOf(el);
-        if (t.length > best.length && t.length >= 300) best = t;
+        if (t.length >= 300 && t.length <= MAX_JD && (!pick || t.length < pick.length)) pick = t;
       }
-      if (best) return { text: best, source: "selector", ...meta };
+      return pick;
+    };
+    for (const sel of JD_SELECTORS) {
+      const t = smallest(sel);
+      if (t) return { text: t, source: "selector", ...meta };
     }
-    for (const el of doc.querySelectorAll("main, article, [role='main']")) {
-      const t = textOf(el);
-      if (t.length > best.length) best = t;
-    }
-    if (best.length >= 300) return { text: best, source: "main", ...meta };
+    const main = smallest("main, article, [role='main']");
+    if (main) return { text: main, source: "main", ...meta };
     const body = textOf(doc.body);
     if (body.length >= 300 && body.length <= 40000 && JD_HINT.test(body)) return { text: body, source: "body", ...meta };
     return { text: "", source: "none", ...meta };
   }
 
-  JP.extract = { collectFields, describeField, extractJobDescription, FIELD_SELECTOR };
+  JP.extract = { htmlToText, collectFields, describeField, extractJobDescription, FIELD_SELECTOR };
 })(globalThis);

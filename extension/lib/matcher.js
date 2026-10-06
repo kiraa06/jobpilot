@@ -85,7 +85,7 @@
   function pickOption(options, wanted) {
     const w = norm(wanted);
     if (!w) return null;
-    const real = options.filter((o) => norm(o.text) && !PLACEHOLDER_OPTION.test(o.text.trim()));
+    const real = options.filter((o) => norm(o.text) && !isPlaceholderOption(o.text));
     const exact = real.find((o) => norm(o.text) === w || norm(o.value) === w);
     if (exact) return exact.value;
     const wt = w.split(" ");
@@ -106,7 +106,8 @@
     return hit && hit.answer ? { answer: hit.answer, sensitive: !!hit.sensitive } : null;
   }
 
-  const api = { norm, match, valueFor, pickOption, answerFor, questionText };
+  const isPlaceholderOption = (text) => PLACEHOLDER_OPTION.test(String(text || "").trim());
+const api = { norm, match, valueFor, pickOption, answerFor, questionText, isPlaceholderOption };
   if (typeof module === "object" && module.exports) module.exports = api;
   else (root.JobPilot = root.JobPilot || {}).matcher = api;
 })(globalThis);

@@ -1,6 +1,6 @@
 (function (root) {
   const JP = (root.JobPilot = root.JobPilot || {});
-  const { match, valueFor, pickOption, answerFor, questionText } = JP.matcher;
+  const { match, valueFor, pickOption, answerFor, questionText, isPlaceholderOption } = JP.matcher;
   const { collectFields, extractJobDescription } = JP.extract;
   const COLORS = { filled: "#22c55e", sensitive: "#f59e0b", unmatched: "#3b82f6" };
   const QUESTION_TYPES = new Set(["text", "textarea", "select", "radio", "number", "url", "contenteditable"]);
@@ -38,7 +38,10 @@
       const radio = optValue && byId(optValue);
       if (!radio) return false;
       radio.click();
-      return radio.checked;
+      if (!radio.checked) return false;
+      const first = byId(desc.jpId);
+      if (first) first.dataset.jobpilotFilled = optValue;
+      return true;
     }
     const el = byId(desc.jpId);
     if (!el) return false;
@@ -46,15 +49,18 @@
       const optValue = pickOption(desc.options, value);
       if (optValue == null) return false;
       setNativeValue(el, optValue);
+      el.dataset.jobpilotFilled = optValue;
       return true;
     }
     if (desc.type === "contenteditable") {
       el.focus();
       el.textContent = value;
       el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+      el.dataset.jobpilotFilled = el.textContent;
       return true;
     }
     setNativeValue(el, value);
+    el.dataset.jobpilotFilled = el.value;
     return true;
   }
 
@@ -67,20 +73,38 @@
       if (desc.type === "file") {
         if (m && m.key === "resumeFile") {
           report.fileFieldFound = true;
-          if (pdf && attachFile(el, pdf)) { report.fileAttached = true; mark(el, "filled"); }
+          const ours = el.files.length === 1 && el.files[0].name === el.dataset.jobpilotFile;
+          if (el.files.length > 0 && !ours) { report.kept++; continue; } // user's own file
+          if (pdf && attachFile(el, pdf)) {
+            el.dataset.jobpilotFile = pdf.name;
+            report.fileAttached = true;
+            mark(el, "filled");
+          }
         }
         continue;
       }
-      const ownedByUs = el && el.dataset.jobpilotFilled === "1";
-      const userTyped = desc.type !== "radio" && desc.type !== "select" && desc.value && !ownedByUs;
-      if (userTyped) { report.kept++; continue; }
+      // A field is ours only while its state still equals what we last wrote.
+      const written = el && el.dataset.jobpilotFilled;
+      let ownedByUs = false;
+      let userSet = false;
+      if (desc.type === "radio") {
+        ownedByUs = written !== undefined && desc.checked === written;
+        userSet = !!desc.checked && !ownedByUs;
+      } else if (desc.type === "select") {
+        const cur = desc.options.find((o) => o.value === desc.value);
+        ownedByUs = written !== undefined && desc.value === written;
+        userSet = !!desc.value && !!cur && !isPlaceholderOption(cur.text) && !ownedByUs;
+      } else {
+        ownedByUs = written !== undefined && desc.value === written;
+        userSet = !!desc.value && !ownedByUs;
+      }
+      if (userSet) { report.kept++; continue; }
 
       const ans = answerFor(desc, answers);
       const value = ans ? ans.answer : m ? valueFor(m.key, profile) : "";
       const sensitive = ans ? ans.sensitive : !!(m && m.sensitive);
       if (value && write(desc, value)) {
         const target = desc.type === "radio" ? el.closest("fieldset") || el : el;
-        if (el) el.dataset.jobpilotFilled = "1";
         mark(target, sensitive ? "sensitive" : "filled");
         report.filled++;
         if (sensitive) report.sensitive++;
