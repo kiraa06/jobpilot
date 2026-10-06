@@ -78,3 +78,28 @@ test("answerFor matches question text", () => {
   assert.equal(answerFor(d({ label: "Anything else?" }), answers), null);
   assert.equal(answerFor(d({ label: "Notice" }), [{ question: "Notice", answer: "", sensitive: true }]), null);
 });
+
+test("pickOption uses whole-token matching", () => {
+  const yn = [{ value: "y", text: "Yes" }, { value: "n", text: "No" }];
+  assert.equal(pickOption(yn, "Notice"), null);
+  assert.equal(pickOption(yn, "Not applicable"), null);
+  const mf = [{ value: "m", text: "Male" }, { value: "f", text: "Female" }];
+  assert.equal(pickOption(mf, "female"), "f");
+  assert.equal(pickOption([{ value: "m", text: "Male" }], "female"), null);
+});
+
+test("third-party contact fields are never matched", () => {
+  for (const label of ["Emergency contact phone", "Hiring manager email", "Reference email",
+    "Name of your manager", "Company website", "Phone type"]) {
+    assert.equal(match(d({ label })), null, label);
+  }
+  assert.equal(match(d({ label: "Name" })).key, "fullName");
+  assert.equal(match(d({ label: "Full name" })).key, "fullName");
+});
+
+test("yearsExperience only matches total experience", () => {
+  assert.equal(match(d({ label: "Years of experience with Kubernetes" })), null);
+  assert.equal(match(d({ label: "How many years of experience do you have in Python?" })), null);
+  assert.equal(match(d({ label: "Years of experience" })).key, "yearsExperience");
+  assert.equal(match(d({ label: "Total years of experience" })).key, "yearsExperience");
+});

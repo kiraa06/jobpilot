@@ -1,6 +1,7 @@
 (function (root) {
   // Order matters: specific rules precede generic ones ("last name" before "name").
   const RULES = [
+    { key: "otherPerson", skip: true, re: /\b(reference|referee|referrer|emergency|manager|supervisor|spouse|hiring|recruiter|interviewer|guardian|parent)\b|\bcompany (website|url)\b|\bphone type\b/ },
     { key: "middleName", skip: true, re: /\bmiddle name\b/ },
     { key: "firstName", re: /\b(first|given|fore) ?name\b|\bfname\b/ },
     { key: "lastName", re: /\b(last|family|sur) ?name\b|\blname\b/ },
@@ -13,7 +14,7 @@
     { key: "expectedCtc", sensitive: true, re: /\b(expected|desired)\b.*\b(ctc|salary|compensation|pay)\b|\bsalary expectations?\b/ },
     { key: "currentCtc", sensitive: true, re: /\b(current|present)\b.*\b(ctc|salary|compensation)\b|\bctc\b/ },
     { key: "workAuthorization", sensitive: true, re: /\bwork authori[sz]ation\b|\bauthori[sz]ed to work\b|\bvisa\b|\bsponsorship\b|\bright to work\b/ },
-    { key: "yearsExperience", re: /\b(years|yrs)\b.*\bexperience\b|\btotal experience\b/ },
+    { key: "yearsExperience", re: /^(total |overall )?(years|yrs)( of)?( total| overall)? (work |professional )?experience$|\b(total|overall) (years of )?(work |professional )?experience\b/ },
     { key: "currentCompany", re: /\b(current|present|recent)\b.*\b(company|employer|organi[sz]ation)\b/ },
     { key: "currentTitle", re: /\b(current|present|recent)\b.*\b(title|designation|role|position)\b|\bjob title\b|\bdesignation\b/ },
     { key: "city", re: /\bcity\b|\btown\b/ },
@@ -25,7 +26,7 @@
     { key: "headline", re: /\bheadline\b/ },
     { key: "summary", re: /\b(summary|about (you|yourself)|bio)\b/ },
     { key: "skills", re: /\bskills?\b/ },
-    { key: "fullName", re: /\bfull name\b|\byour name\b|\bcandidate name\b|^name\b/ },
+    { key: "fullName", re: /\bfull name\b|\byour (full )?name\b|\bcandidate name\b|^name$/ },
   ];
   const SKIP_TYPES = new Set(["checkbox", "password", "hidden", "submit", "button", "reset", "image", "search", "range", "color"]);
   const MAX_RULE_TEXT = 60; // longer labels are questions → Magic Edit answers them
@@ -87,9 +88,10 @@
     const real = options.filter((o) => norm(o.text) && !PLACEHOLDER_OPTION.test(o.text.trim()));
     const exact = real.find((o) => norm(o.text) === w || norm(o.value) === w);
     if (exact) return exact.value;
+    const wt = w.split(" ");
     const loose = real.find((o) => {
-      const t = norm(o.text);
-      return t.length >= 2 && (w.includes(t) || t.includes(w));
+      const ot = norm(o.text).split(" ");
+      return ot.every((t) => wt.includes(t)) || wt.every((t) => ot.includes(t));
     });
     return loose ? loose.value : null;
   }
