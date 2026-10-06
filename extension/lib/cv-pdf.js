@@ -8,13 +8,21 @@
 
   function sanitize(s) {
     return String(s || "")
-      .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, "")
+      .replace(/[\u{1F000}-\u{1FFFF}\u{FE0F}\u{200D}]/gu, "")
       .replace(/[\u0000-\u0008\u000B-\u001F]/g, "")
       .replace(/[ \t]{2,}/g, " ")
       .trim();
   }
 
-  function wrapText(text, font, size, maxWidth) {
+  function fitText(text, font, size, maxWidth) {
+    const sanitized = sanitize(text);
+    if (font.widthOfTextAtSize(sanitized, size) <= maxWidth) return sanitized;
+    let cut = sanitized.length - 1;
+    while (cut > 0 && font.widthOfTextAtSize(sanitized.slice(0, cut) + "…", size) > maxWidth) cut--;
+    return sanitized.slice(0, cut) + "…";
+  }
+
+  function wrapText(text, font, size, maxWidth, fontKitFont = null) {
     const lines = [];
     for (const para of sanitize(text).split(/\n+/)) {
       let line = "";
@@ -44,23 +52,34 @@
     doc.registerFontkit(fontkit);
     const regular = await doc.embedFont(fonts.regular, { subset: true });
     const bold = await doc.embedFont(fonts.bold, { subset: true });
+    const regularFontkit = fontkit.create(fonts.regular);
+    const boldFontkit = fontkit.create(fonts.bold);
+
+    const filterGlyphs = (text, font) => {
+      return [...text].filter(c => font.hasGlyphForCodePoint(c.charCodeAt(0))).join("");
+    };
+
     const b = profile.basics;
     doc.setTitle(sanitize(`${b.firstName} ${b.lastName} — CV`));
     let page = doc.addPage(PAGE);
     let y = PAGE[1] - MARGIN;
 
     const ensure = (h) => { if (y - h < MARGIN) { page = doc.addPage(PAGE); y = PAGE[1] - MARGIN; } };
-    const text = (t, x, size, font, c = INK) => page.drawText(sanitize(t), { x, y, size, font, color: color(c) });
-    const para = (t, size, font, c = INK, indent = 0, lead = 1.35) => {
-      for (const line of wrapText(t, font, size, WIDTH - indent)) {
+    const text = (t, x, size, font, c = INK, fontKitFont = null) => {
+      let s = sanitize(t);
+      if (fontKitFont) s = filterGlyphs(s, fontKitFont);
+      page.drawText(s, { x, y, size, font, color: color(c) });
+    };
+    const para = (t, size, font, c = INK, indent = 0, lead = 1.35, fontKitFont = null) => {
+      for (const line of wrapText(t, font, size, WIDTH - indent, fontKitFont)) {
         ensure(size * lead);
         y -= size * lead;
-        text(line, MARGIN + indent, size, font, c);
+        text(line, MARGIN + indent, size, font, c, fontKitFont);
       }
     };
     const rightText = (t, size, c = MUTED) => {
-      const s = sanitize(t);
-      page.drawText(s, { x: PAGE[0] - MARGIN - regular.widthOfTextAtSize(s, size), y, size, font: regular, color: color(c) });
+      const s = fitText(t, regular, size, WIDTH * 0.45);
+      page.drawText(filterGlyphs(s, regularFontkit), { x: PAGE[0] - MARGIN - regular.widthOfTextAtSize(s, size), y, size, font: regular, color: color(c) });
     };
     const section = (title) => {
       ensure(40);
@@ -72,24 +91,28 @@
     };
     const bullets = (items) => {
       for (const item of items || []) {
-        const lines = wrapText(item, regular, 9.5, WIDTH - 12);
+        const lines = wrapText(item, regular, 9.5, WIDTH - 12, regularFontkit);
         lines.forEach((line, i) => {
           ensure(13);
           y -= 13;
           if (i === 0) text("•", MARGIN + 2, 9.5, regular, MUTED);
-          text(line, MARGIN + 12, 9.5, regular);
+          text(line, MARGIN + 12, 9.5, regular, INK, regularFontkit);
         });
       }
     };
     const dates = (e) => [e.start, e.end].filter(Boolean).join(" – ");
 
     // Header
-    y -= 22;
-    text(`${b.firstName} ${b.lastName}`.trim(), MARGIN, 22, bold);
-    if (b.headline) para(b.headline, 11, regular, ACCENT);
+    const nameLines = wrapText(`${b.firstName} ${b.lastName}`.trim(), bold, 22, WIDTH, boldFontkit);
+    for (const line of nameLines) {
+      ensure(22 * 1.2);
+      y -= 22 * 1.2;
+      text(line, MARGIN, 22, bold, INK, boldFontkit);
+    }
+    if (b.headline) para(b.headline, 11, regular, ACCENT, 0, 1.35, regularFontkit);
     const contact = [b.email, b.phone, b.location || [b.city, b.country].filter(Boolean).join(", "), b.linkedin, b.github, b.website]
       .filter(Boolean).join("  ·  ");
-    if (contact) para(contact, 9, regular, MUTED);
+    if (contact) para(contact, 9, regular, MUTED, 0, 1.35, regularFontkit);
 
     if (b.summary) { section("Summary"); para(b.summary, 10, regular); }
 
@@ -98,9 +121,12 @@
       for (const e of profile.experience) {
         ensure(40);
         y -= 15;
-        text(e.title, MARGIN, 10.5, bold);
-        rightText(dates(e), 9);
-        para([e.company, e.location].filter(Boolean).join(" · "), 9.5, regular, MUTED, 0, 1.3);
+        const dateStr = dates(e);
+        const dateWidth = bold.widthOfTextAtSize(dateStr, 9);
+        rightText(dateStr, 9);
+        const titleFitted = fitText(e.title, bold, 10.5, WIDTH - dateWidth - 12);
+        text(titleFitted, MARGIN, 10.5, bold, INK, boldFontkit);
+        para([e.company, e.location].filter(Boolean).join(" · "), 9.5, regular, MUTED, 0, 1.3, regularFontkit);
         bullets(e.bullets);
         y -= 3;
       }
@@ -108,7 +134,7 @@
 
     if (profile.skills.length) {
       section("Skills");
-      for (const g of profile.skills) para(`${g.group}: ${(g.items || []).join(", ")}`, 9.5, regular);
+      for (const g of profile.skills) para(`${g.group}: ${(g.items || []).join(", ")}`, 9.5, regular, INK, 0, 1.35, regularFontkit);
     }
 
     if (profile.projects.length) {
@@ -116,9 +142,12 @@
       for (const p of profile.projects) {
         ensure(30);
         y -= 14;
-        text(p.name, MARGIN, 10, bold);
+        const linkStr = p.link || "";
+        const linkWidth = linkStr ? regular.widthOfTextAtSize(linkStr, 8.5) : 0;
         if (p.link) rightText(p.link, 8.5);
-        if (p.description) para(p.description, 9.5, regular);
+        const nameFitted = fitText(p.name, bold, 10, WIDTH - linkWidth - 12);
+        text(nameFitted, MARGIN, 10, bold, INK, boldFontkit);
+        if (p.description) para(p.description, 9.5, regular, INK, 0, 1.35, regularFontkit);
         bullets(p.bullets);
       }
     }
@@ -128,15 +157,18 @@
       for (const e of profile.education) {
         ensure(30);
         y -= 14;
-        text([e.degree, e.field].filter(Boolean).join(", "), MARGIN, 10, bold);
-        rightText(dates(e), 9);
-        para([e.institution, e.grade].filter(Boolean).join(" · "), 9.5, regular, MUTED, 0, 1.3);
+        const dateStr = dates(e);
+        const dateWidth = regular.widthOfTextAtSize(dateStr, 9);
+        rightText(dateStr, 9);
+        const degreeFitted = fitText([e.degree, e.field].filter(Boolean).join(", "), bold, 10, WIDTH - dateWidth - 12);
+        text(degreeFitted, MARGIN, 10, bold, INK, boldFontkit);
+        para([e.institution, e.grade].filter(Boolean).join(" · "), 9.5, regular, MUTED, 0, 1.3, regularFontkit);
       }
     }
 
     if (profile.certifications.length) {
       section("Certifications");
-      for (const c of profile.certifications) para([c.name, c.issuer, c.date].filter(Boolean).join(" · "), 9.5, regular);
+      for (const c of profile.certifications) para([c.name, c.issuer, c.date].filter(Boolean).join(" · "), 9.5, regular, INK, 0, 1.35, regularFontkit);
     }
     return doc;
   }
@@ -164,21 +196,54 @@
   }
 
   async function buildCvPdf(profile, deps, { maxPages = 2 } = {}) {
-    const p = structuredClone(profile);
-    const notes = [];
-    for (;;) {
-      const doc = await render(p, deps);
-      const pages = doc.getPageCount();
-      const note = pages > maxPages ? trimOnce(p) : null;
-      if (!note) {
-        const trimmed = [...new Set(notes)];
-        return { bytes: await doc.save(), pages, trimmed };
-      }
-      notes.push(note);
+    // Check if original profile fits
+    const originalDoc = await render(structuredClone(profile), deps);
+    const originalPages = originalDoc.getPageCount();
+
+    if (originalPages <= maxPages) {
+      return { bytes: await originalDoc.save(), pages: originalPages, trimmed: [], overflow: false };
     }
+
+    // Original exceeds maxPages - find maximum number of trim steps K
+    const cloneForK = structuredClone(profile);
+    let K = 0;
+    while (trimOnce(cloneForK)) K++;
+
+    // Binary search for smallest k in [1, K] that fits within maxPages
+    let bestK = 0;
+    let bestDoc = originalDoc;
+
+    let left = 1, right = K;
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2);
+      const pMid = structuredClone(profile);
+      for (let i = 0; i < mid; i++) trimOnce(pMid);
+      const docMid = await render(pMid, deps);
+      const pagesMid = docMid.getPageCount();
+
+      if (pagesMid <= maxPages) {
+        bestK = mid;
+        bestDoc = docMid;
+        right = mid - 1;
+      } else {
+        left = mid + 1;
+      }
+    }
+
+    // Render at bestK and collect trim notes
+    const pBest = structuredClone(profile);
+    const notes = [];
+    for (let i = 0; i < bestK; i++) {
+      const note = trimOnce(pBest);
+      if (note) notes.push(note);
+    }
+
+    const trimmed = [...new Set(notes)];
+    const pages = bestDoc.getPageCount();
+    return { bytes: await bestDoc.save(), pages, trimmed, overflow: pages > maxPages };
   }
 
-  const api = { buildCvPdf, wrapText, sanitize };
+  const api = { buildCvPdf, wrapText, sanitize, fitText };
   if (typeof module === "object" && module.exports) module.exports = api;
   else (root.JobPilot = root.JobPilot || {}).cvPdf = api;
 })(globalThis);
