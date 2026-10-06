@@ -37,7 +37,7 @@ def run_claude(args, prompt, *, claude_bin, cwd, timeout, cancel):
     proc = subprocess.Popen(
         [claude_bin, "-p", "--output-format", "json", *args],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        cwd=str(cwd), env=env, text=True, start_new_session=True,
+        cwd=str(cwd), env=env, text=True, encoding="utf-8", errors="replace", start_new_session=True,
     )
     box = {}
 
@@ -57,7 +57,7 @@ def run_claude(args, prompt, *, claude_bin, cwd, timeout, cancel):
         reader.join(0.2)
 
     stdout, stderr = box.get("stdout") or "", box.get("stderr") or ""
-    if "No conversation found" in stdout + stderr:
+    if proc.returncode != 0 and "No conversation found" in stdout + stderr:
         raise ClaudeError("SESSION_NOT_FOUND",
                           "That Claude session isn't available. Run `claude --resume` to list your sessions.")
     try:

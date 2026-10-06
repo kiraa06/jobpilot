@@ -5,6 +5,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from jobpilot.claude_runner import ClaudeError, run_claude
 
@@ -15,8 +16,12 @@ class RunnerTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.log = self.tmp / "log.json"
-        os.environ["FAKE_CLAUDE_LOG"] = str(self.log)
-        os.environ["FAKE_CLAUDE_MODE"] = "ok"
+        self.env_patcher = mock.patch.dict(os.environ, {
+            "FAKE_CLAUDE_LOG": str(self.log),
+            "FAKE_CLAUDE_MODE": "ok",
+        }, clear=False)
+        self.env_patcher.start()
+        self.addCleanup(self.env_patcher.stop)
         out = self.tmp / "out.json"
         out.write_text(json.dumps({"word": "banana"}))
         os.environ["FAKE_CLAUDE_OUTPUT"] = str(out)
@@ -75,6 +80,25 @@ class RunnerTest(unittest.TestCase):
         start = time.monotonic()
         self.assertCode("CANCELLED", cancel=cancel)
         self.assertLess(time.monotonic() - start, 8)
+
+    def test_success_when_output_mentions_phrase(self):
+        os.environ["FAKE_CLAUDE_MODE"] = "ok_mentions_phrase"
+        out = self.tmp / "out.json"
+        out.write_text(json.dumps({"word": "No conversation found with session ID: x"}))
+        os.environ["FAKE_CLAUDE_OUTPUT"] = str(out)
+        data = self.run_fake()
+        self.assertEqual(data["structured_output"], {"word": "No conversation found with session ID: x"})
+
+    def test_utf8_encoding_roundtrip(self):
+        os.environ["FAKE_CLAUDE_MODE"] = "ok"
+        out = self.tmp / "out.json"
+        test_obj = {"word": "₹ café “q”"}
+        out.write_text(json.dumps(test_obj), encoding="utf-8")
+        os.environ["FAKE_CLAUDE_OUTPUT"] = str(out)
+        # Remove locale env vars to test that encoding="utf-8" is used
+        with mock.patch.dict(os.environ, {"LANG": "", "LC_ALL": ""}, clear=False):
+            data = self.run_fake()
+            self.assertEqual(data["structured_output"], test_obj)
 
 
 if __name__ == "__main__":

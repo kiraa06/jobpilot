@@ -26,5 +26,9 @@ elif mode == "garbage":
     print("not json at all")
 elif mode == "no_structured":
     print(json.dumps({"type": "result", "is_error": False, "result": "hello"}))
+elif mode == "ok_mentions_phrase":
+    out = json.load(open(os.environ["FAKE_CLAUDE_OUTPUT"]))
+    print(json.dumps({"type": "result", "is_error": False, "session_id": "fork-123",
+                      "result": json.dumps(out), "structured_output": out}))
 elif mode == "sleep":
     time.sleep(30)
