@@ -1,0 +1,3 @@
+- pdf-lib 1.17.1 — MIT — https://github.com/Hopding/pdf-lib
+- @pdf-lib/fontkit 1.1.1 — MIT — https://github.com/Hopding/fontkit
+- Lato — SIL Open Font License 1.1 — fonts/OFL.txt
