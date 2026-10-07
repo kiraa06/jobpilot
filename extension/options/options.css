@@ -1,0 +1,12 @@
+main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { margin: 0 0 4px; font-size: 20px; }
+h2 { margin: 0 0 6px; font-size: 14px; }
+section.card { margin-top: 14px; }
+input, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 9px; box-sizing: border-box; }
+#session { width: 100%; max-width: 420px; font-family: ui-monospace, monospace; }
+textarea { width: 100%; font: 12px/1.4 ui-monospace, monospace; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.grid label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+code { background: var(--bg); padding: 1px 5px; border-radius: 5px; }
+.ok { color: var(--ok-text); } .error { color: var(--danger-text); }

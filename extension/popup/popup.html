@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>JobPilot</title>
+<link rel="stylesheet" href="../styles/tokens.css"><link rel="stylesheet" href="popup.css"></head>
+<body>
+<header>
+  <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2c.6 4.8 2.6 7.4 8 8-5.4.6-7.4 3.2-8 8-.6-4.8-2.6-7.4-8-8 5.4-.6 7.4-3.2 8-8z"/></svg>
+  <div><h1>JobPilot</h1><p class="muted tagline">Your co-pilot for the application grind</p></div>
+  <button id="settings" class="icon" title="Settings" aria-label="Settings">⚙</button>
+</header>
+
+<section id="setup" class="card hidden">
+  <p><strong>First things first.</strong> Import your CV so I know who I'm bragging about.</p>
+  <button id="go-settings" class="primary">Open Settings</button>
+</section>
+
+<section id="main" class="hidden">
+  <div class="actions">
+    <button id="autofill" class="primary">Autofill</button>
+    <button id="magic" class="magic">✨ Magic Edit</button>
+  </div>
+  <p class="muted small mode-row"><span id="mode"></span> <button id="use-original" class="link hidden">Use original</button></p>
+</section>
+
+<section id="running" class="card hidden">
+  <div class="spinner" aria-hidden="true"></div>
+  <p id="quip"></p>
+  <p id="safe" class="muted small">Safe to close this popup — I'll keep working. <span id="elapsed"></span></p>
+  <button id="cancel">Cancel</button>
+</section>
+
+<section id="review" class="hidden">
+  <div class="card">
+    <h2 id="review-title"></h2>
+    <ul id="changes"></ul>
+  </div>
+  <div id="blocking" class="card warn hidden">
+    <h3>⚠️ Not in your original CV</h3><ul></ul>
+    <label><input type="checkbox" id="accept-blocking"> I've checked these and they're true</label>
+  </div>
+  <div id="warnings" class="card note hidden"><h3>New skills added</h3><ul></ul></div>
+  <div id="unverified" class="card note hidden"><h3>Claude suggests (left out — confirm first)</h3><ul></ul></div>
+  <div id="answers" class="card hidden"><h3>Answers</h3><ul></ul></div>
+  <div class="actions">
+    <button id="confirm" class="magic">Make PDF &amp; Autofill</button>
+    <button id="discard">Discard</button>
+  </div>
+</section>
+
+<p id="status" role="status"></p>
+
+<script src="../vendor/pdf-lib.min.js"></script>
+<script src="../vendor/fontkit.umd.min.js"></script>
+<script src="../lib/util.js"></script>
+<script src="../lib/profile.js"></script>
+<script src="../lib/cv-pdf.js"></script>
+<script src="quips.js"></script>
+<script src="popup.js"></script>
+</body></html>

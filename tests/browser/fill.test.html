@@ -1,0 +1,149 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>RUNNING</title>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"JobPosting","title":"Platform Engineer",
+ "hiringOrganization":{"@type":"Organization","name":"Initech"},
+ "description":"<p>We are hiring a Platform Engineer to run Kubernetes on AWS. Responsibilities include building CI/CD, observability and infrastructure as code with Terraform. Requirements: 5+ years of DevOps experience, strong Linux, Python scripting, and on-call ownership of production systems.</p>"}
+</script></head>
+<body>
+<h1>Platform Engineer</h1>
+<!-- Greenhouse-like: label[for] -->
+<form id="gh">
+  <label for="first_name">First Name *</label><input id="first_name" name="job_application[first_name]">
+  <label for="last_name">Last Name *</label><input id="last_name" name="job_application[last_name]">
+  <label for="email">Email *</label><input id="email" type="email">
+  <label for="phone">Phone</label><input id="phone" type="tel" value="+1 555 0100">
+  <label for="resume">Resume/CV</label><input id="resume" type="file" style="display:none">
+  <label for="cover">Cover letter</label><input id="cover" type="file">
+  <label for="country">Country</label>
+  <select id="country"><option value="">Select…</option><option value="IN">India</option><option value="US">United States</option></select>
+  <label for="why">Why do you want to join Initech?</label><textarea id="why"></textarea>
+  <label><input type="checkbox" id="consent"> I agree to the privacy policy</label>
+</form>
+<!-- Lever-like: wrapping label + name only -->
+<form id="lever">
+  <label>Full name<input name="name"></label>
+  <label>LinkedIn URL<input name="urls[LinkedIn]"></label>
+  <label>Current company<input name="org"></label>
+</form>
+<!-- Workday-like: aria-labelledby + previous-sibling text -->
+<form id="wd">
+  <div id="np-l">Notice Period</div><input aria-labelledby="np-l" data-automation-id="np">
+  <div><div>Expected CTC</div><input id="ectc"></div>
+  <fieldset><legend>Are you willing to relocate?</legend>
+    <label><input type="radio" name="reloc" value="y"> Yes</label>
+    <label><input type="radio" name="reloc" value="n"> No</label></fieldset>
+  <div contenteditable="true" aria-label="Summary" id="summary"></div>
+</form>
+<!-- user-preset controls -->
+<form id="pre">
+  <fieldset><legend>Do you have a non-compete?</legend>
+    <label><input type="radio" name="nc" value="y"> Yes</label>
+    <label><input type="radio" name="nc" value="n" checked> No</label></fieldset>
+  <label for="edu">Highest education</label>
+  <select id="edu"><option value="">Select…</option><option value="b">Bachelor's</option><option value="m" selected>Master's</option></select>
+</form>
+<!-- standard fields whose labels appear inside long Claude questions; sensitive radio with free-text profile value -->
+<form id="std">
+  <label for="city2">City</label><input id="city2">
+  <label for="phone2">Phone</label><input id="phone2">
+  <label for="email2">Email</label><input id="email2">
+  <fieldset><legend>Will you require visa sponsorship?</legend>
+    <label><input type="radio" name="visa" value="y"> Yes</label>
+    <label><input type="radio" name="visa" value="n"> No</label></fieldset>
+</form>
+<form id="up"><label for="resume2">Upload resume</label><input id="resume2" type="file"></form>
+<pre id="results"></pre>
+
+<script src="../../extension/lib/util.js"></script>
+<script src="../../extension/lib/profile.js"></script>
+<script src="../../extension/lib/matcher.js"></script>
+<script src="../../extension/content/extract.js"></script>
+<script src="../../extension/content/fill.js"></script>
+<script>
+(async () => {
+  const results = [];
+  const check = (name, cond) => results.push(`${cond ? "PASS" : "FAIL"} ${name}`);
+  const $ = (s) => document.querySelector(s);
+  const inputEvents = [];
+  $("#first_name").addEventListener("input", (e) => inputEvents.push(e.target.value));
+
+  const profile = JobPilot.profile.normalizeProfile({
+    basics: { firstName: "Asha", lastName: "Verma", email: "asha@example.com", phone: "+91 98765 43210",
+      linkedin: "https://linkedin.com/in/asha", country: "India", city: "Bengaluru",
+      workAuthorization: "Yes - authorized to work in India", noticePeriod: "30 days", expectedCtc: "", summary: "Platform engineer." },
+    experience: [{ company: "Acme Corp", title: "Senior DevOps Engineer", start: "2021", end: "Present", bullets: [] }],
+  });
+
+  const scan = JobPilot.content.scan({ profile });
+  check("JD from JSON-LD", scan.jd && scan.jd.source === "jsonld" && scan.jd.text.includes("Kubernetes"));
+  check("company from JSON-LD", scan.company === "Initech");
+  check("title from JSON-LD", scan.title === "Platform Engineer");
+  check("free-text question collected", scan.questions.some((q) => q.question.startsWith("Why do you want to join")));
+  check("radio question collected with options", scan.questions.some((q) => q.type === "radio" && q.options.join() === "Yes,No"));
+  check("empty sensitive field asked (Expected CTC)", scan.questions.some((q) => q.question === "Expected CTC"));
+  check("filled profile field not asked (First Name)", !scan.questions.some((q) => q.question.startsWith("First Name")));
+
+  const pdfB64 = JobPilot.util.bytesToBase64(new TextEncoder().encode("%PDF-1.7 test"));
+  const answers = [
+    { question: "Why do you want to join Initech?", answer: "I like platforms.", sensitive: false },
+    { question: "Are you willing to relocate?", answer: "Yes", sensitive: true },
+    { question: "Expected CTC", answer: "40 LPA", sensitive: true },
+    { question: "Do you have a non-compete?", answer: "Yes", sensitive: false },
+    { question: "Highest education", answer: "Bachelor's", sensitive: false },
+    { question: "Which city would you be willing to relocate to?", answer: "Pune", sensitive: false },
+    { question: "May we contact you by phone or email about future openings?", answer: "Yes", sensitive: false },
+    { question: "Email", answer: "Yes", sensitive: false }, // exact label match: only question fields may use answers
+  ];
+  const dt = new DataTransfer();
+  dt.items.add(new File(["x"], "mine.pdf", { type: "application/pdf" }));
+  $("#resume2").files = dt.files;
+  const report = JobPilot.content.autofill({ profile, answers, pdf: { base64: pdfB64, name: "cv.pdf" } });
+
+  check("first name filled", $("#first_name").value === "Asha");
+  check("React-style input event fired", inputEvents.includes("Asha"));
+  check("email filled", $("#email").value === "asha@example.com");
+  check("keeps user-typed values", $("#phone").value === "+1 555 0100" && report.kept >= 1);
+  check("select by option text", $("#country").value === "IN");
+  check("free-text answer filled", $("#why").value === "I like platforms.");
+  check("checkbox untouched", $("#consent").checked === false);
+  check("lever full name", document.querySelector('[name="name"]').value === "Asha Verma");
+  check("lever linkedin", document.querySelector('[name="urls[LinkedIn]"]').value === "https://linkedin.com/in/asha");
+  check("lever current company derived", document.querySelector('[name="org"]').value === "Acme Corp");
+  check("aria-labelledby notice period", document.querySelector('[data-automation-id="np"]').value === "30 days");
+  check("sibling-text expected CTC from answers", $("#ectc").value === "40 LPA");
+  check("radio answered", document.querySelector('input[name="reloc"][value="y"]').checked);
+  check("contenteditable summary", $("#summary").textContent === "Platform engineer.");
+  check("resume attached (hidden input)", $("#resume").files.length === 1 && $("#resume").files[0].name === "cv.pdf");
+  check("cover letter not attached", $("#cover").files.length === 0);
+  check("user-checked radio kept", document.querySelector('input[name="nc"][value="n"]').checked && !document.querySelector('input[name="nc"][value="y"]').checked);
+  check("user-chosen select kept", $("#edu").value === "m");
+  check("user-attached file kept", $("#resume2").files.length === 1 && $("#resume2").files[0].name === "mine.pdf");
+  check("report kept exact (phone, radio, select, file)", report.kept === 4);
+  check("report counts sensitive (reloc, expected CTC, notice period)", report.sensitive === 3);
+  check("report fileAttached", report.fileAttached === true);
+  check("City gets profile city, not the relocate answer", $("#city2").value === "Bengaluru");
+  check("Email gets profile email, not the contact answer", $("#email2").value === "asha@example.com");
+  check("Phone gets profile phone, not the contact answer", $("#phone2").value === "+91 98765 43210");
+  check("sensitive radio not filled from free-text profile value", !document.querySelector('input[name="visa"][value="y"]').checked && !document.querySelector('input[name="visa"][value="n"]').checked);
+  check("sensitive radio without exact option marked unmatched", document.querySelector('input[name="visa"]').style.outline.includes("dashed"));
+  check("visa not asked when profile has workAuthorization", !scan.questions.some((q) => q.question.includes("visa")));
+  check("highlight applied", $("#email").style.outline.includes("solid"));
+
+  $("#email").value = "me@other.com";
+  $("#first_name").value = "";
+  const again = JobPilot.content.autofill({ profile, answers, pdf: { base64: pdfB64, name: "tailored.pdf" } });
+  check("first run filled 15", report.filled === 15);
+  check("re-run refills own fields (15 first run minus edited email = 14)", $("#first_name").value === "Asha" && again.filled === 14);
+  check("user edit after autofill kept", $("#email").value === "me@other.com");
+  check("own file replaced by tailored pdf", $("#resume").files.length === 1 && $("#resume").files[0].name === "tailored.pdf");
+  check("user file still kept after re-run", $("#resume2").files[0].name === "mine.pdf");
+  check("htmlToText block boundaries", JobPilot.extract.htmlToText("<p>Terraform.</p><p>Requirements</p><ul><li>AWS</li><li>GCP</li></ul>").includes("Terraform. Requirements") && JobPilot.extract.htmlToText("<ul><li>AWS</li><li>GCP</li></ul>").includes("AWS GCP"));
+  check("htmlToText double-encoded", JobPilot.extract.htmlToText("&lt;p&gt;Hello&lt;/p&gt;&lt;p&gt;World&lt;/p&gt;") === "Hello World");
+
+  const failed = results.filter((r) => r.startsWith("FAIL"));
+  document.getElementById("results").textContent = results.join("\n");
+  document.title = failed.length ? `FAIL ${failed.length}/${results.length}` : `PASS ${results.length}/${results.length}`;
+})().catch((e) => { document.title = "ERROR " + e.message; document.getElementById("results").textContent = e.stack; });
+</script>
+</body></html>
