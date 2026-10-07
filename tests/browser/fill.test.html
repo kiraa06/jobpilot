@@ -43,6 +43,15 @@
   <label for="edu">Highest education</label>
   <select id="edu"><option value="">Select…</option><option value="b">Bachelor's</option><option value="m" selected>Master's</option></select>
 </form>
+<!-- standard fields whose labels appear inside long Claude questions; sensitive radio with free-text profile value -->
+<form id="std">
+  <label for="city2">City</label><input id="city2">
+  <label for="phone2">Phone</label><input id="phone2">
+  <label for="email2">Email</label><input id="email2">
+  <fieldset><legend>Will you require visa sponsorship?</legend>
+    <label><input type="radio" name="visa" value="y"> Yes</label>
+    <label><input type="radio" name="visa" value="n"> No</label></fieldset>
+</form>
 <form id="up"><label for="resume2">Upload resume</label><input id="resume2" type="file"></form>
 <pre id="results"></pre>
 
@@ -61,7 +70,8 @@
 
   const profile = JobPilot.profile.normalizeProfile({
     basics: { firstName: "Asha", lastName: "Verma", email: "asha@example.com", phone: "+91 98765 43210",
-      linkedin: "https://linkedin.com/in/asha", country: "India", noticePeriod: "30 days", expectedCtc: "", summary: "Platform engineer." },
+      linkedin: "https://linkedin.com/in/asha", country: "India", city: "Bengaluru",
+      workAuthorization: "Yes - authorized to work in India", noticePeriod: "30 days", expectedCtc: "", summary: "Platform engineer." },
     experience: [{ company: "Acme Corp", title: "Senior DevOps Engineer", start: "2021", end: "Present", bullets: [] }],
   });
 
@@ -81,6 +91,9 @@
     { question: "Expected CTC", answer: "40 LPA", sensitive: true },
     { question: "Do you have a non-compete?", answer: "Yes", sensitive: false },
     { question: "Highest education", answer: "Bachelor's", sensitive: false },
+    { question: "Which city would you be willing to relocate to?", answer: "Pune", sensitive: false },
+    { question: "May we contact you by phone or email about future openings?", answer: "Yes", sensitive: false },
+    { question: "Email", answer: "Yes", sensitive: false }, // exact label match: only question fields may use answers
   ];
   const dt = new DataTransfer();
   dt.items.add(new File(["x"], "mine.pdf", { type: "application/pdf" }));
@@ -109,12 +122,19 @@
   check("report kept exact (phone, radio, select, file)", report.kept === 4);
   check("report counts sensitive (reloc, expected CTC, notice period)", report.sensitive === 3);
   check("report fileAttached", report.fileAttached === true);
+  check("City gets profile city, not the relocate answer", $("#city2").value === "Bengaluru");
+  check("Email gets profile email, not the contact answer", $("#email2").value === "asha@example.com");
+  check("Phone gets profile phone, not the contact answer", $("#phone2").value === "+91 98765 43210");
+  check("sensitive radio not filled from free-text profile value", !document.querySelector('input[name="visa"][value="y"]').checked && !document.querySelector('input[name="visa"][value="n"]').checked);
+  check("sensitive radio without exact option marked unmatched", document.querySelector('input[name="visa"]').style.outline.includes("dashed"));
+  check("visa not asked when profile has workAuthorization", !scan.questions.some((q) => q.question.includes("visa")));
   check("highlight applied", $("#email").style.outline.includes("solid"));
 
   $("#email").value = "me@other.com";
   $("#first_name").value = "";
   const again = JobPilot.content.autofill({ profile, answers, pdf: { base64: pdfB64, name: "tailored.pdf" } });
-  check("re-run refills own fields (12 first run minus edited email = 11)", $("#first_name").value === "Asha" && again.filled === 11);
+  check("first run filled 15", report.filled === 15);
+  check("re-run refills own fields (15 first run minus edited email = 14)", $("#first_name").value === "Asha" && again.filled === 14);
   check("user edit after autofill kept", $("#email").value === "me@other.com");
   check("own file replaced by tailored pdf", $("#resume").files.length === 1 && $("#resume").files[0].name === "tailored.pdf");
   check("user file still kept after re-run", $("#resume2").files[0].name === "mine.pdf");

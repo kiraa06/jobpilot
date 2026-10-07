@@ -82,12 +82,14 @@
     }
   }
 
-  function pickOption(options, wanted) {
+  // { exact: true } accepts only a normalized text/value match (used for sensitive yes/no choices).
+  function pickOption(options, wanted, { exact: exactOnly = false } = {}) {
     const w = norm(wanted);
     if (!w) return null;
     const real = options.filter((o) => norm(o.text) && !isPlaceholderOption(o.text));
     const exact = real.find((o) => norm(o.text) === w || norm(o.value) === w);
     if (exact) return exact.value;
+    if (exactOnly) return null;
     const wt = w.split(" ");
     const loose = real.find((o) => {
       const ot = norm(o.text).split(" ");
@@ -96,12 +98,20 @@
     return loose ? loose.value : null;
   }
 
+  // Containment only between comparably long texts, so "City" never inherits
+  // the answer to "Which city would you be willing to relocate to?".
+  function similarQuestion(a, b) {
+    if (a.length <= 8 || b.length <= 8) return false;
+    const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+    return long.includes(short) && short.length >= 0.6 * long.length;
+  }
+
   function answerFor(desc, answers) {
     const q = norm(questionText(desc));
     if (!q) return null;
     const hit = (answers || []).find((a) => {
       const aq = norm(a.question);
-      return aq && (aq === q || (aq.length > 8 && (q.includes(aq) || aq.includes(q))));
+      return aq && (aq === q || similarQuestion(aq, q));
     });
     return hit && hit.answer ? { answer: hit.answer, sensitive: !!hit.sensitive } : null;
   }

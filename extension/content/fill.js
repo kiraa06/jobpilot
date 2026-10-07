@@ -5,6 +5,11 @@
   const COLORS = { filled: "#22c55e", sensitive: "#f59e0b", unmatched: "#3b82f6" };
   const QUESTION_TYPES = new Set(["text", "textarea", "select", "radio", "number", "url", "contenteditable"]);
 
+  // One predicate for "this field is a question for Claude": scan() sends exactly these,
+  // and autofill() consults Claude's answers only for these.
+  const isQuestionField = (desc, m, profile) =>
+    QUESTION_TYPES.has(desc.type) && (!m || (m.sensitive && !valueFor(m.key, profile)));
+
   const byId = (id) => document.querySelector(`[data-jobpilot-id="${id}"]`);
 
   function mark(el, kind) {
@@ -31,10 +36,10 @@
     return el.files.length === 1;
   }
 
-  // Returns true if the value was written.
-  function write(desc, value) {
+  // Returns true if the value was written. exact: choices must match an option exactly.
+  function write(desc, value, { exact = false } = {}) {
     if (desc.type === "radio") {
-      const optValue = pickOption(desc.options, value);
+      const optValue = pickOption(desc.options, value, { exact });
       const radio = optValue && byId(optValue);
       if (!radio) return false;
       radio.click();
@@ -46,7 +51,7 @@
     const el = byId(desc.jpId);
     if (!el) return false;
     if (desc.type === "select") {
-      const optValue = pickOption(desc.options, value);
+      const optValue = pickOption(desc.options, value, { exact });
       if (optValue == null) return false;
       setNativeValue(el, optValue);
       el.dataset.jobpilotFilled = optValue;
@@ -100,10 +105,11 @@
       }
       if (userSet) { report.kept++; continue; }
 
-      const ans = answerFor(desc, answers);
+      const ans = isQuestionField(desc, m, profile) ? answerFor(desc, answers) : null;
       const value = ans ? ans.answer : m ? valueFor(m.key, profile) : "";
       const sensitive = ans ? ans.sensitive : !!(m && m.sensitive);
-      if (value && write(desc, value)) {
+      // A sensitive choice filled from free profile text (not a Claude answer) needs an exact option.
+      if (value && write(desc, value, { exact: !ans && sensitive })) {
         const target = desc.type === "radio" ? el.closest("fieldset") || el : el;
         mark(target, sensitive ? "sensitive" : "filled");
         report.filled++;
@@ -120,11 +126,9 @@
     const fields = collectFields(document);
     const questions = [];
     for (const desc of fields) {
-      if (!QUESTION_TYPES.has(desc.type)) continue;
-      const m = match(desc);
-      const needsAnswer = !m || (m.sensitive && !valueFor(m.key, profile));
+      if (!isQuestionField(desc, match(desc), profile)) continue;
       const question = questionText(desc);
-      if (needsAnswer && question.length >= 3) {
+      if (question.length >= 3) {
         questions.push({ question, type: desc.type, options: desc.options.map((o) => o.text).filter(Boolean) });
       }
     }

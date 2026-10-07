@@ -103,3 +103,28 @@ test("yearsExperience only matches total experience", () => {
   assert.equal(match(d({ label: "Years of experience" })).key, "yearsExperience");
   assert.equal(match(d({ label: "Total years of experience" })).key, "yearsExperience");
 });
+
+test("answerFor never gives a long question's answer to a short standard label", () => {
+  const answers = [
+    { question: "Which city would you be willing to relocate to?", answer: "Pune", sensitive: false },
+    { question: "May we contact you by phone or email about future openings?", answer: "Yes", sensitive: false },
+  ];
+  for (const label of ["City", "Phone", "Email", "City *"]) assert.equal(answerFor(d({ label }), answers), null, label);
+  assert.equal(answerFor(d({ label: "Which city would you be willing to relocate to? *" }), answers).answer, "Pune");
+});
+
+test("answerFor containment needs comparable lengths", () => {
+  const answers = [{ question: "Why do you want to join Initech and what do you bring?", answer: "Because", sensitive: false }];
+  assert.equal(answerFor(d({ label: "Why do you want to join" }), answers), null);
+  const close = [{ question: "Why do you want to join Initech", answer: "Because", sensitive: false }];
+  assert.equal(answerFor(d({ label: "Why do you want to join Initech today" }), close).answer, "Because");
+});
+
+test("pickOption exact mode refuses token-loose matches", () => {
+  const yn = [{ value: "", text: "Select…" }, { value: "y", text: "Yes" }, { value: "n", text: "No" }];
+  assert.equal(pickOption(yn, "Yes - authorized to work in India"), "y", "loose mode still matches");
+  assert.equal(pickOption(yn, "Yes - authorized to work in India", { exact: true }), null);
+  assert.equal(pickOption(yn, "yes", { exact: true }), "y");
+  assert.equal(pickOption(yn, "No thanks", { exact: true }), null);
+  assert.equal(pickOption([{ value: "IN", text: "India" }], "in", { exact: true }), "IN");
+});
