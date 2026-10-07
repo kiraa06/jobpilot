@@ -53,6 +53,31 @@ class HostTest(unittest.TestCase):
             n = struct.unpack("=I", p.stdout[:4])[0]
             return json.loads(p.stdout[4:4+n])
 
+    def test_exits_cleanly_while_browser_keeps_stdin_open(self):
+        """Arc keeps the port's stdin open after the reply; the host must still exit 0, not abort."""
+        with tempfile.TemporaryDirectory() as home:
+            msg = json.dumps({"action": "ping"}).encode()
+            proc = subprocess.Popen(
+                [sys.executable, "host/jobpilot_host.py"],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env={"JOBPILOT_HOME": home},
+            )
+            try:
+                proc.stdin.write(struct.pack("=I", len(msg)) + msg)
+                proc.stdin.flush()  # stdin deliberately left open, as Chromium does
+                n = struct.unpack("=I", proc.stdout.read(4))[0]
+                self.assertTrue(json.loads(proc.stdout.read(n))["ok"])
+                code = proc.wait(timeout=5)
+                stderr = proc.stderr.read().decode()
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
+                for pipe in (proc.stdin, proc.stdout, proc.stderr):
+                    pipe.close()
+            self.assertNotIn("Fatal Python error", stderr)
+            self.assertEqual(code, 0)
+
     def test_ping_with_valid_home(self):
         """Ping with valid temp home should succeed with version 0.1.0."""
         res = self._run_host("ping")
