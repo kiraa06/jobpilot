@@ -70,7 +70,7 @@ def import_cv(payload, cfg, cancel):
 def magic_edit(payload, cfg, cancel):
     session_id = normalize_session_id(payload.get("sessionId"))
     if not session_id:
-        raise ValueError("Session ID must be a UUID like f6c115bd-98ae-4b8e-8a2e-7b54b5580e52.")
+        raise ValueError("Session ID must be a UUID like 00000000-0000-4000-8000-000000000000.")
     jd = (payload.get("jd") or "").strip()
     if not jd:
         raise ValueError("No job description was provided.")

@@ -41,6 +41,8 @@ function callHost(action, payload) {
   };
 }
 
+const hostOf = (url) => { try { return new URL(url).hostname; } catch (_) { return ""; } };
+
 const session = {
   async get(key) { return (await chrome.storage.session.get(key))[key]; },
   set(key, value) { return chrome.storage.session.set({ [key]: value }); },
@@ -159,7 +161,8 @@ async function magicConfirm(tabId, pdf) {
     const { tailoredProfile, answers, company, role } = job.result;
     const name = safePdfName(pdf?.name);
     const safePdf = { base64: pdf.base64, name };
-    await session.set(`tailored:${tabId}`, { profile: tailoredProfile, answers, pdf: safePdf, company, role });
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    await session.set(`tailored:${tabId}`, { profile: tailoredProfile, answers, pdf: safePdf, company, role, host: hostOf(tab?.url) });
     try {
       await chrome.downloads.download({
         url: `data:application/pdf;base64,${pdf.base64}`,
@@ -240,10 +243,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: "#4f46e5" });
 });
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (!changeInfo.url) return;
-  session.remove(`jd:${tabId}`); // tailored:<tab> is kept: multi-step ATS forms change URL
+  session.remove(`jd:${tabId}`);
   chrome.action.setBadgeText({ tabId, text: "" });
+  // The tailored CV follows multi-step ATS forms on the same host, but not to another site.
+  const tailored = await session.get(`tailored:${tabId}`);
+  if (tailored?.host && hostOf(changeInfo.url) !== tailored.host) await session.remove(`tailored:${tabId}`);
 });
 
 // Orphaned jobs from before a worker restart (the running map is empty now).

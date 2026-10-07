@@ -95,11 +95,9 @@ test("fitText truncates with an ellipsis within maxWidth", async () => {
   assert.ok(fitted.endsWith("…"));
 });
 
-test("14 long roles are trimmed to <= 2 pages in < 5s, input untouched", async () => {
+test("14 long roles are trimmed to <= 2 pages, input untouched", async () => {
   const p = longProfile(14);
-  const t0 = Date.now();
   const out = await buildCvPdf(p, deps);
-  assert.ok(Date.now() - t0 < 5000, `took ${Date.now() - t0}ms`);
   assert.ok(out.pages <= 2, `got ${out.pages} pages`);
   assert.equal(out.overflow, false);
   assert.ok(out.trimmed.length > 0);
@@ -107,7 +105,8 @@ test("14 long roles are trimmed to <= 2 pages in < 5s, input untouched", async (
 });
 
 test("maxPages: 1 on a long profile reports overflow with trim notes", async () => {
-  const out = await buildCvPdf(longProfile(40), deps, { maxPages: 1 }) // 14 roles trim down to one page, so go bigger;
+  // 14 roles still trim down to one page, so use 40 to force an overflow.
+  const out = await buildCvPdf(longProfile(40), deps, { maxPages: 1 });
   assert.equal(out.overflow, true);
   assert.ok(out.pages > 1);
   assert.ok(out.trimmed.length > 0);

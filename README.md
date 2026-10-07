@@ -28,17 +28,28 @@ Open JobPilot → ⚙ Settings:
   After tailoring, the popup says "Using your CV tailored for <role> @ <company>" with a "Use original" link to go back.
   If the tailored PDF still can't fit 2 pages, the popup warns ("Heads up: still N pages…").
 - No job description found? Select it on the page → right-click → **Use as job description**.
+- Making the PDF takes 5–12 s on long CVs. Closing the popup during that step cancels it — just click
+  **Make PDF & Autofill** again.
 
 ## Known limitations
 
 - Symbols the CV font (Lato) lacks — such as ✓ and ★ — are left out of the PDF.
 - Dropdowns without a "Select…" placeholder are treated as already chosen and left alone.
 
+## Uninstall
+
+```bash
+rm "$HOME/Library/Application Support/Arc/User Data/NativeMessagingHosts/com.kiraa06.jobpilot.json"
+rm "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.kiraa06.jobpilot.json"
+rm -rf ~/.jobpilot          # helper config, log and temporary imports
+```
+Then remove the extension from `arc://extensions` (or `chrome://extensions`).
+
 ## Develop
 
 ```bash
 ./scripts/test.sh                                   # Python + JS unit tests
-python3 -m http.server 8765 --bind 127.0.0.1        # then open tests/browser/fill.test.html → title PASS 36/36
+python3 -m http.server 8765 --bind 127.0.0.1        # then open tests/browser/fill.test.html → title PASS 43/43
 ./scripts/vendor.sh                                 # re-download vendored libs (checksum-verified)
 ```
 

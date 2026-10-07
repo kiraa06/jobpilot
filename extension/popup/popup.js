@@ -1,5 +1,14 @@
 const $ = (id) => document.getElementById(id);
-const send = (msg) => chrome.runtime.sendMessage(msg);
+const WORKER_GONE = { code: "WORKER_GONE", message: "JobPilot's background stopped — reopen the popup." };
+// Every reply is checked: a dead service worker yields undefined or a rejection, never a throw here.
+async function send(msg) {
+  try {
+    const res = await chrome.runtime.sendMessage(msg);
+    return res && typeof res.ok === "boolean" ? res : { ok: false, error: WORKER_GONE };
+  } catch (_) {
+    return { ok: false, error: WORKER_GONE };
+  }
+}
 const ERROR_HINTS = {
   HOST_MISSING: "Helper not found. In Terminal: cd ~/Projects/jobpilot && ./install.sh — then restart Arc.",
 };
@@ -17,7 +26,14 @@ function status(text, kind = "") {
 }
 
 function showError(error) {
-  status(ERROR_HINTS[error.code] || error.message || "Something went sideways.", "error");
+  status(ERROR_HINTS[error?.code] || error?.message || "Something went sideways.", "error");
+}
+
+// Runs a button's request with the button disabled, so double clicks can't stack requests.
+async function busy(button, fn) {
+  if (button.disabled) return;
+  button.disabled = true;
+  try { await fn(); } finally { button.disabled = false; }
 }
 
 function fillList(container, items, render) {
@@ -108,19 +124,17 @@ async function confirmMagic() {
       $("confirm").disabled = false;
       return;
     }
-    let res;
-    try {
-      res = await send({ type: "magic:confirm", tabId, pdf: { base64: JobPilot.util.bytesToBase64(out.bytes), name } });
-    } catch (_) {
-      status("PDF built, but JobPilot's background stopped — try Make PDF again.", "error");
+    const res = await send({ type: "magic:confirm", tabId, pdf: { base64: JobPilot.util.bytesToBase64(out.bytes), name } });
+    if (res.error?.code === WORKER_GONE.code) {
+      status("PDF built, but JobPilot's background stopped — reopen the popup and try Make PDF again.", "error");
       $("confirm").disabled = false;
       return;
     }
     show("main");
     await renderMode();
-    const saved = (res?.ok ? res.data?.downloaded : res?.downloaded) ? `Saved Downloads/JobPilot/${name}.` : "";
-    if (!res?.ok) {
-      status(`${saved} ${ERROR_HINTS[res?.error?.code] || res?.error?.message || "Autofill failed."}`.trim(), "error");
+    const saved = (res.ok ? res.data?.downloaded : res.downloaded) ? `Saved Downloads/JobPilot/${name}.` : "";
+    if (!res.ok) {
+      status(`${saved} ${ERROR_HINTS[res.error?.code] || res.error?.message || "Autofill failed."}`.trim(), "error");
       send({ type: "job:clear", tabId });
       return;
     }
@@ -197,24 +211,33 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 $("settings").onclick = $("go-settings").onclick = () => chrome.runtime.openOptionsPage();
-$("autofill").onclick = async () => {
+$("autofill").onclick = () => busy($("autofill"), async () => {
   status("Filling…");
   const res = await send({ type: "autofill", tabId });
   if (res.ok) reportAutofill(res.data); else showError(res.error);
-};
-$("magic").onclick = async () => {
+});
+$("magic").onclick = () => busy($("magic"), async () => {
   status("");
   const res = await send({ type: "magic:start", tabId });
   if (!res.ok) showError(res.error);
   else if (res.data?.state === "cancelled") show("main");
+});
+$("cancel").onclick = async () => {
+  const res = await send({ type: "magic:cancel", tabId });
+  show("main");
+  if (res.ok) status("Cancelled. No harm done."); else showError(res.error);
 };
-$("cancel").onclick = async () => { await send({ type: "magic:cancel", tabId }); show("main"); status("Cancelled. No harm done."); };
-$("discard").onclick = async () => { await send({ type: "magic:discard", tabId }); show("main"); await renderMode(); status("Discarded."); };
+$("discard").onclick = async () => {
+  const res = await send({ type: "magic:discard", tabId });
+  show("main");
+  await renderMode();
+  if (res.ok) status("Discarded."); else showError(res.error);
+};
 $("confirm").onclick = confirmMagic;
 $("use-original").onclick = async () => {
-  await send({ type: "magic:discard", tabId });
+  const res = await send({ type: "magic:discard", tabId });
   await renderMode();
-  status("Back to your original CV.");
+  if (res.ok) status("Back to your original CV."); else showError(res.error);
 };
 
 init();

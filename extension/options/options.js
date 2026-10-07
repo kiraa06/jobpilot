@@ -105,7 +105,7 @@ $("import").onclick = async () => {
 
 $("save-session").onclick = async () => {
   const id = JobPilot.util.parseSessionId($("session").value);
-  if (!id) return say("session-status", "That doesn't look like a session ID (expected something like f6c115bd-98ae-…).", "error");
+  if (!id) return say("session-status", "That doesn't look like a session ID (expected something like 00000000-0000-4000-…).", "error");
   try {
     await chrome.storage.local.set({ sessionId: id });
     $("session").value = id;

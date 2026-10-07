@@ -8,7 +8,7 @@ test("base64 round trip preserves bytes", () => {
 });
 
 test("parseSessionId accepts commands, whitespace and uppercase", () => {
-  const id = "f6c115bd-98ae-4b8e-8a2e-7b54b5580e52";
+  const id = "00000000-0000-4000-8000-000000000000";
   assert.equal(util.parseSessionId(`claude --resume ${id.toUpperCase()}\n`), id);
   assert.equal(util.parseSessionId("  " + id + "  "), id);
   assert.equal(util.parseSessionId("my-session"), null);

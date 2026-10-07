@@ -11,7 +11,7 @@ from jobpilot import actions
 from tests.test_truth import ORIGINAL
 
 FAKE = str(Path(__file__).with_name("fake_claude.py"))
-SID = "f6c115bd-98ae-4b8e-8a2e-7b54b5580e52"
+SID = "00000000-0000-4000-8000-000000000000"
 
 
 class ActionsTest(unittest.TestCase):
