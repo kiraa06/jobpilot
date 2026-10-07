@@ -13,7 +13,7 @@ ORIGINAL = {
     ],
     "education": [{"institution": "NIT Calicut", "degree": "B.Tech", "field": "CSE", "start": "", "end": "2016", "grade": ""}],
     "skills": [{"group": "Cloud", "items": ["AWS", "Kubernetes"]}],
-    "projects": [],
+    "projects": [{"name": "kube-cost", "description": "Cost dashboards", "bullets": ["Saved 30%"], "link": ""}],
     "certifications": [{"name": "CKA", "issuer": "CNCF", "date": "2022"}],
 }
 
@@ -51,6 +51,35 @@ class TruthTest(unittest.TestCase):
         t["education"][0]["degree"] = "M.Tech"
         t["certifications"].append({"name": "AWS SA Pro", "issuer": "AWS", "date": "2023"})
         self.assertEqual(len(truth_check(ORIGINAL, t)["blocking"]), 2)
+
+    def test_invented_project_blocks(self):
+        t = copy.deepcopy(ORIGINAL)
+        t["projects"][0]["description"] = "Kubernetes cost dashboards for 40 teams"  # rewording is fine
+        t["projects"].append({"name": "Terraform Operator", "description": "", "bullets": [], "link": ""})
+        blocking = truth_check(ORIGINAL, t)["blocking"]
+        self.assertEqual(len(blocking), 1)
+        self.assertIn("Project", blocking[0])
+        self.assertIn("Terraform Operator", blocking[0])
+
+    def test_changed_education_end_year_blocks(self):
+        t = copy.deepcopy(ORIGINAL)
+        t["education"][0]["end"] = "2015"
+        self.assertEqual(len(truth_check(ORIGINAL, t)["blocking"]), 1)
+
+    def test_changed_education_field_blocks(self):
+        t = copy.deepcopy(ORIGINAL)
+        t["education"][0]["field"] = "Data Science"
+        self.assertEqual(len(truth_check(ORIGINAL, t)["blocking"]), 1)
+
+    def test_changed_certification_date_blocks(self):
+        t = copy.deepcopy(ORIGINAL)
+        t["certifications"][0]["date"] = "2019"
+        self.assertEqual(len(truth_check(ORIGINAL, t)["blocking"]), 1)
+
+    def test_changed_certification_issuer_blocks(self):
+        t = copy.deepcopy(ORIGINAL)
+        t["certifications"][0]["issuer"] = "Linux Foundation"
+        self.assertEqual(len(truth_check(ORIGINAL, t)["blocking"]), 1)
 
     def test_new_skill_warns_once(self):
         t = copy.deepcopy(ORIGINAL)

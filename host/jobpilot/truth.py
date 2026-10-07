@@ -7,8 +7,9 @@ from .schemas import BASICS_FIELDS
 FREE_BASICS = {"headline", "summary"}
 SECTIONS = (
     ("experience", ("company", "title", "start", "end"), "Role"),
-    ("education", ("institution", "degree"), "Education"),
-    ("certifications", ("name",), "Certification"),
+    ("education", ("institution", "degree", "field", "start", "end"), "Education"),
+    ("certifications", ("name", "issuer", "date"), "Certification"),
+    ("projects", ("name",), "Project"),
 )
 
 
