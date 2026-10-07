@@ -5,11 +5,14 @@ import os
 import sys
 import time
 
-prompt = sys.stdin.read()
 log = os.environ.get("FAKE_CLAUDE_LOG")
+if log:  # pid first, so tests can watch the process before stdin is consumed
+    with open(log, "w") as fh:
+        json.dump({"pid": os.getpid()}, fh)
+prompt = sys.stdin.read()
 if log:
     with open(log, "w") as fh:
-        json.dump({"argv": sys.argv[1:], "stdin": prompt, "cwd": os.getcwd()}, fh)
+        json.dump({"pid": os.getpid(), "argv": sys.argv[1:], "stdin": prompt, "cwd": os.getcwd()}, fh)
 
 mode = os.environ.get("FAKE_CLAUDE_MODE", "ok")
 if mode == "ok":

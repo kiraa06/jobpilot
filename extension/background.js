@@ -1,6 +1,7 @@
 const HOST = "com.kiraa06.jobpilot";
 const CONTENT_FILES = ["lib/util.js", "lib/profile.js", "lib/matcher.js", "content/extract.js", "content/fill.js"];
 const MIN_JD_CHARS = 200;
+const CANCEL_GRACE_MS = 3000; // time the helper gets to kill claude and reply before we drop the port
 const running = new Map(); // tabId -> {cancel}
 const confirming = new Set(); // tabIds with a confirm in flight (claimed synchronously)
 
@@ -29,8 +30,13 @@ function callHost(action, payload) {
   return {
     promise,
     cancel() {
-      try { port.postMessage({ action: "cancel" }); port.disconnect(); } catch (_) { /* already gone */ }
-      finish(fail("CANCELLED", "Cancelled."));
+      finish(fail("CANCELLED", "Cancelled.")); // the caller is done now; the helper winds down below
+      const drop = () => { try { port.disconnect(); } catch (_) { /* already gone */ } };
+      try { port.postMessage({ action: "cancel" }); } catch (_) { return; }
+      // Let the helper kill claude and reply (onMessage above disconnects); force it after a grace period.
+      const timer = setTimeout(drop, CANCEL_GRACE_MS);
+      port.onMessage.addListener(() => clearTimeout(timer));
+      port.onDisconnect.addListener(() => clearTimeout(timer));
     },
   };
 }

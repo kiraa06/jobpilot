@@ -8,6 +8,10 @@ import time
 
 EXTRA_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 
+# The claude process currently running (one per host process), so a signal handler can kill it.
+_current = None
+_current_lock = threading.Lock()
+
 
 class ClaudeError(Exception):
     def __init__(self, code, message):
@@ -29,9 +33,20 @@ def _kill(proc):
             continue
 
 
+def kill_current():
+    """Kill the running claude process group, if any. Safe to call from a signal handler."""
+    with _current_lock:
+        proc = _current
+    if proc is not None and proc.poll() is None:
+        _kill(proc)
+
+
 def run_claude(args, prompt, *, claude_bin, cwd, timeout, cancel):
     if not claude_bin or not os.path.exists(claude_bin):
         raise ClaudeError("CLAUDE_NOT_FOUND", f"claude CLI not found at {claude_bin!r}. Re-run ./install.sh.")
+    global _current
+    if cancel.is_set():
+        raise ClaudeError("CANCELLED", "Cancelled.")
     env = dict(os.environ)
     env["PATH"] = f"{os.path.dirname(claude_bin)}:{EXTRA_PATH}:{env.get('PATH', '')}"
     proc = subprocess.Popen(
@@ -39,6 +54,16 @@ def run_claude(args, prompt, *, claude_bin, cwd, timeout, cancel):
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         cwd=str(cwd), env=env, text=True, encoding="utf-8", errors="replace", start_new_session=True,
     )
+    with _current_lock:
+        _current = proc
+    try:
+        return _supervise(proc, prompt, timeout=timeout, cancel=cancel)
+    finally:
+        with _current_lock:
+            _current = None
+
+
+def _supervise(proc, prompt, *, timeout, cancel):
     box = {}
 
     def communicate():

@@ -1,12 +1,14 @@
 """JobPilot native-messaging host. One request per process (one port per job)."""
 import logging
+import os
+import signal
 import sys
 import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from jobpilot import actions, config  # noqa: E402
+from jobpilot import actions, claude_runner, config  # noqa: E402
 from jobpilot.protocol import ProtocolError, read_message, write_message  # noqa: E402
 
 
@@ -29,6 +31,17 @@ def main():
 
     cancel = threading.Event()
     box = {}
+
+    def on_signal(signum, _frame):
+        # Chromium SIGTERMs the host when the port disconnects (popup/tab closed);
+        # claude runs in its own process group, so kill it explicitly before exiting.
+        cancel.set()
+        claude_runner.kill_current()
+        logging.info("action=%s terminated by signal %s", msg.get("action"), signum)
+        os._exit(128 + signum)
+
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, on_signal)
 
     def work():
         try:
@@ -53,7 +66,8 @@ def main():
     worker = threading.Thread(target=work, daemon=True)
     worker.start()
     threading.Thread(target=watch_stdin, daemon=True).start()
-    worker.join()
+    while worker.is_alive():  # timed joins keep the main thread responsive to signals
+        worker.join(0.2)
     logging.info("action=%s ok=%s", msg.get("action"), box["response"].get("ok"))
     try:
         write_message(stdout, box["response"])
