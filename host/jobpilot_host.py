@@ -76,4 +76,15 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Chromium keeps the port's stdin open after the reply, so watch_stdin is still
+    # blocked reading it. Normal interpreter shutdown would then abort while closing
+    # stdin (macOS shows "Python quit unexpectedly"), so exit without finalizing.
+    exit_code = 0
+    try:
+        main()
+    except BaseException:
+        logging.exception("host crashed")
+        exit_code = 1
+    finally:
+        logging.shutdown()
+        os._exit(exit_code)
