@@ -18,6 +18,8 @@ IMPORT_TIMEOUT = 120
 MAGIC_TIMEOUT = 180
 MAX_PDF_BYTES = 10 * 1024 * 1024
 MAX_QUESTIONS = 40
+# Untrusted text (JDs, CVs) reaches these runs: load no MCP servers, no user/project settings or hooks.
+ISOLATION = ("--strict-mcp-config", "--setting-sources", "")
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 
 
@@ -55,8 +57,8 @@ def import_cv(payload, cfg, cancel):
     path.write_bytes(pdf)
     try:
         data = run_claude(
-            ["--tools", "Read", "--allowedTools", "Read", "--add-dir", str(imports),
-             "--json-schema", json.dumps(PROFILE_SCHEMA)],
+            ["--tools", "Read", "--allowedTools", f"Read({imports}/**)", "--add-dir", str(imports),
+             *ISOLATION, "--json-schema", json.dumps(PROFILE_SCHEMA)],
             import_prompt(str(path)),
             claude_bin=cfg["claudeBin"], cwd=cfg["home"], timeout=IMPORT_TIMEOUT, cancel=cancel,
         )
@@ -77,7 +79,8 @@ def magic_edit(payload, cfg, cancel):
         raise ValueError("No CV profile was provided.")
     questions = list(payload.get("questions") or [])[:MAX_QUESTIONS]
     data = run_claude(
-        ["--resume", session_id, "--fork-session", "--tools", "", "--json-schema", json.dumps(MAGIC_SCHEMA)],
+        ["--resume", session_id, "--fork-session", "--tools", "", *ISOLATION, "--disallowedTools", "mcp__*",
+         "--json-schema", json.dumps(MAGIC_SCHEMA)],
         magic_prompt(jd=jd, profile=profile, questions=questions, page_url=payload.get("pageUrl") or ""),
         claude_bin=cfg["claudeBin"], cwd=cfg["home"], timeout=MAGIC_TIMEOUT, cancel=cancel,
     )

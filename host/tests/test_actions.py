@@ -47,6 +47,12 @@ class ActionsTest(unittest.TestCase):
         self.assertIn("Read", argv)
         self.assertIn("--json-schema", argv)
         self.assertNotIn("--resume", argv)
+        self.assertEqual(argv[argv.index("--tools") + 1], "Read")
+        self.assertIn("--strict-mcp-config", argv)
+        self.assertEqual(argv[argv.index("--setting-sources") + 1], "")
+        imports = str(self.home / "imports")
+        self.assertEqual(argv[argv.index("--allowedTools") + 1], f"Read({imports}/**)")
+        self.assertEqual(argv[argv.index("--add-dir") + 1], imports)
         self.assertEqual(list((self.home / "imports").glob("*.pdf")), [], "temp PDF must be deleted")
 
     def test_import_rejects_non_pdf(self):
@@ -80,6 +86,9 @@ class ActionsTest(unittest.TestCase):
         self.assertEqual(argv[argv.index("--resume") + 1], SID)
         self.assertIn("--fork-session", argv)
         self.assertEqual(argv[argv.index("--tools") + 1], "")
+        self.assertIn("--strict-mcp-config", argv)
+        self.assertEqual(argv[argv.index("--setting-sources") + 1], "")
+        self.assertEqual(argv[argv.index("--disallowedTools") + 1], "mcp__*")
         self.assertEqual(os.path.realpath(logged["cwd"]), os.path.realpath(self.home))
         self.assertIn("Notice period?", logged["stdin"])
 
