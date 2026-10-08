@@ -38,3 +38,10 @@ MAGIC_SCHEMA = _obj({
     "answers": _list_of({"question": _STR, "answer": _STR, "sensitive": {"type": "boolean"}}),
     "unverifiedClaims": _STR_LIST,
 })
+
+DESIGN_SCHEMA = _obj({
+    "template": _STR,
+    "pageSize": {"type": "string", "enum": ["A4", "Letter"]},
+    "fontsUsed": _STR_LIST,
+    "notes": _STR_LIST,
+})

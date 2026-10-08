@@ -125,8 +125,8 @@ render time against the tailored profile; any failure → fallback (§7).
 
 ## 7. Rendering (Magic Edit confirm)
 
-1. Popup sends `design:render {profile}` to the background (rendering outlives the popup
-   the same way v1 jobs do).
+1. Confirm runs entirely in the background (`magic:confirm`): it builds the PDF — captured
+   design or v1 fallback — so closing the popup mid-render loses nothing.
 2. Background renders the template to an HTML string, opens
    `render/render.html` in an **inactive** tab of the current window, hands it the HTML,
    waits for fonts (`document.fonts.ready`), attaches `chrome.debugger`
@@ -135,8 +135,8 @@ render time against the tailored profile; any failure → fallback (§7).
 3. Page count via pdf-lib. If > 2 pages, binary-search trim with the v1 `trimOnce`
    sequence (same as `buildCvPdf`); report `trimmed` and `overflow` exactly as v1.
 4. Return `{base64, pages, trimmed, overflow, design: "yours"}`. Timeout 30 s total.
-5. Any error/timeout/check failure → popup builds the v1 PDF and shows
-   "Used the standard design: <reason>". Download name, location and autofill attach are
+5. Any error/timeout/check failure → the background builds the v1 PDF and the popup shows
+   "Used the standard design — <reason>". Download name, location and autofill attach are
    unchanged from v1.
 
 The preview in Settings uses the same render path, so what Kiran approves is what Magic
@@ -145,8 +145,11 @@ Edit prints.
 ## 8. Storage
 
 `chrome.storage.local` (already `unlimitedStorage`):
-- `originalCv: {base64, name, importedAt}` — written on every successful import.
-- `design: {template, pageSize, fontsUsed, notes, status: "draft"|"approved", capturedAt, approvedAt}`.
+- `originalPdf: {base64, name}` — already written on every import since v1 (no re-import needed).
+- `designDraft: {template, pageSize, fontsUsed, notes, capturedAt, rejected?}` — latest capture,
+  awaiting approval; a bad retry never touches the approved design.
+- `design: {…draft, approvedAt}` — the approved design Magic Edit uses.
+- `designStale: true` — set when a CV is re-imported while a design is approved.
 
 Re-importing a CV keeps the approved design but shows "Your CV changed — recapture the
 design?" in Settings. "Reset to standard design" deletes `design`.

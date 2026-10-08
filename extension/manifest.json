@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JobPilot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Autofill job applications from your CV \u2014 and tailor it per job with your Claude session.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyY4Dc2SaI8NoTzyidR7zwpzQWnsV5xZK4NxNEoneXG8GuQPt4EViabiw5+rWOt/DQY4uKHbvJa3EZK64u/2RvKRGzC4s59TQxhO/ym914GGecqX4igfbnNi+zoCubD5sitzw9W4h3Ufi2zjMJO2PRiK+EwjQZvl6uGTnMkk67i10GRZ6AMQgk/A41GwZPkdTR0jQD4rTfZiR3rJfeMH2ObFHlTLr/l67v3C6HrWdHfXbO5c6mjQpea9CDEIGlvO0epxuKEVL8DQu4rJejmlI6vLDC9WVDwOqUbf00qTXzgAe+go9b9FIe/p2Zo0l/2iv6EXUHYxN8MTI05vkzcHT0QIDAQAB",
   "permissions": [
@@ -11,7 +11,8 @@
     "nativeMessaging",
     "contextMenus",
     "downloads",
-    "tabs"
+    "tabs",
+    "debugger"
   ],
   "host_permissions": [
     "<all_urls>"

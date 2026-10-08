@@ -49,6 +49,27 @@
     <button id="save-profile">Save profile</button>
     <p id="profile-status" class="muted" role="status"></p>
   </section>
+
+  <section class="card">
+    <h2>6 · Your CV's design</h2>
+    <p class="muted">Magic Edit's PDF can copy the look of the CV you imported — layout, colours, fonts, spacing. Claude studies it once (about 1–3 min) and you approve the result. Until then, and if your design ever fails to print, JobPilot uses its standard design.</p>
+    <p id="design-state" class="muted"></p>
+    <button id="capture" class="primary">Capture my design</button>
+    <button id="reset-design" class="hidden">Go back to the standard design</button>
+    <div id="design-review" class="hidden">
+      <div class="compare">
+        <figure><figcaption>Your original</figcaption><iframe id="orig-view" title="Original CV"></iframe></figure>
+        <figure><figcaption>JobPilot's copy, filled from your profile</figcaption><iframe id="copy-view" title="Captured design preview"></iframe></figure>
+      </div>
+      <ul id="design-notes" class="muted"></ul>
+      <button id="approve-design" class="primary hidden">Use this design</button>
+      <div class="retry">
+        <input id="design-feedback" aria-label="What should change" placeholder="What's off? e.g. the header should be navy, dates right-aligned">
+        <button id="retry-design">Try again</button>
+      </div>
+    </div>
+    <p id="design-status" class="muted" role="status"></p>
+  </section>
 </main>
 <script src="../lib/util.js"></script>
 <script src="../lib/profile.js"></script>

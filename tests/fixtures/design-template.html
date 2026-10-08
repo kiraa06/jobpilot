@@ -1,0 +1,31 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+@page { size: A4; margin: 0; }
+body { margin: 0; font-family: "Carlito", sans-serif; font-size: 10pt; color: #1f2937; }
+.band { position: fixed; top: 0; bottom: 0; left: 0; width: 62mm; background: #0f2a4a; }
+.page { display: grid; grid-template-columns: 62mm 1fr; }
+aside { position: relative; color: #e5edf7; padding: 14mm 6mm 10mm 8mm; }
+main { padding: 14mm 12mm 10mm 9mm; }
+h1 { font-family: "Playfair Display", serif; font-weight: 700; font-size: 24pt; margin: 0; color: #0f2a4a; }
+.headline { color: #c2410c; font-size: 11pt; margin: 2mm 0 5mm; }
+h2 { font-size: 9pt; letter-spacing: .14em; text-transform: uppercase; color: #c2410c; border-bottom: .6pt solid #c2410c; padding-bottom: 1mm; margin: 5mm 0 2mm; }
+aside h2 { color: #fbbf24; border-color: #fbbf24; }
+.job { break-inside: avoid; margin-bottom: 3mm; }
+.job .top { display: flex; justify-content: space-between; font-weight: 700; }
+.job .where { color: #6b7280; }
+ul { margin: 1mm 0 0; padding-left: 4mm; } li { margin: .6mm 0; }
+.contact div { margin-bottom: 1.5mm; word-break: break-all; }
+</style></head><body><div class="band"></div><div class="page">
+<aside>
+  <h2>Contact</h2><div class="contact">{{#contacts}}<div>{{value}}</div>{{/contacts}}</div>
+  {{#hasSkills}}<h2>Skills</h2>{{#skills}}<p><b>{{group}}</b><br>{{itemsText}}</p>{{/skills}}{{/hasSkills}}
+  {{#hasEducation}}<h2>Education</h2>{{#education}}<p><b>{{degree}}</b> {{field}}<br>{{institution}}<br>{{dates}}</p>{{/education}}{{/hasEducation}}
+  {{#hasCertifications}}<h2>Certifications</h2>{{#certifications}}<p>{{name}} · {{issuer}} {{date}}</p>{{/certifications}}{{/hasCertifications}}
+</aside>
+<main>
+  <h1>{{name}}</h1><div class="headline">{{headline}}</div>
+  {{#hasSummary}}<h2>Profile</h2><p>{{summary}}</p>{{/hasSummary}}
+  {{#hasExperience}}<h2>Experience</h2>{{#experience}}<div class="job"><div class="top"><span>{{title}}</span><span>{{dates}}</span></div>
+  <div class="where">{{company}}{{#location}} · {{location}}{{/location}}</div><ul>{{#bullets}}<li>{{.}}</li>{{/bullets}}</ul></div>{{/experience}}{{/hasExperience}}
+  {{#hasProjects}}<h2>Projects</h2>{{#projects}}<div class="job"><b>{{name}}</b> {{description}}<ul>{{#bullets}}<li>{{.}}</li>{{/bullets}}</ul></div>{{/projects}}{{/hasProjects}}
+</main></div></body></html>
