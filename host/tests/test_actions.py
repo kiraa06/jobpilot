@@ -142,6 +142,51 @@ class ActionsTest(unittest.TestCase):
         bad_pdf = self.design_payload(pdfBase64=base64.b64encode(b"nope").decode())
         self.assertEqual(self.call("capture_design", bad_pdf)["error"]["code"], "BAD_REQUEST")
 
+    def fill_payload(self, **over):
+        p = {"sessionId": SID, "profile": ORIGINAL, "jd": "DevOps Engineer at Initech", "pageUrl": "https://jobs.example.com/apply",
+             "pageTitle": "Apply", "filled": [{"question": "First name", "value": "Asha"}],
+             "fields": [
+                 {"id": "a-1", "question": "Years of AWS experience", "type": "number"},
+                 {"id": "a-2", "question": "Are you willing to relocate?", "type": "radio", "options": ["Yes", "No"]},
+                 {"id": "a-3", "question": "Why Initech?", "type": "textarea", "maxLength": 20},
+                 {"id": "a-4", "question": "Notice period", "type": "select", "options": ["Immediate", "30 days"]},
+             ]}
+        p.update(over)
+        return p
+
+    def test_magic_fill_forks_session_and_keeps_only_valid_answers(self):
+        self.fake_output({"values": [
+            {"id": "a-1", "value": "6", "sensitive": False},
+            {"id": "a-2", "value": "Maybe", "sensitive": True},          # not an option -> dropped
+            {"id": "a-3", "value": "Because I love platform work", "sensitive": False},  # clipped to maxLength
+            {"id": "zzz", "value": "x", "sensitive": False},             # unknown id -> dropped
+            {"id": "a-1", "value": "7", "sensitive": False},             # duplicate -> dropped
+            {"id": "a-4", "value": " 30  DAYS", "sensitive": True},  # matched to the real option text
+        ], "notes": ["Check notice period"]})
+        res = self.call("magic_fill", self.fill_payload())
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["data"]["values"], [
+            {"id": "a-1", "value": "6", "sensitive": False},
+            {"id": "a-3", "value": "Because I love platf", "sensitive": False},
+            {"id": "a-4", "value": "30 days", "sensitive": True},
+        ])
+        self.assertEqual(res["data"]["notes"], ["Check notice period"])
+        logged = json.loads(self.log.read_text())
+        argv = logged["argv"]
+        self.assertEqual(argv[argv.index("--resume") + 1], SID)
+        self.assertIn("--fork-session", argv)
+        self.assertEqual(argv[argv.index("--tools") + 1], "")
+        self.assertIn("--strict-mcp-config", argv)
+        self.assertEqual(argv[argv.index("--disallowedTools") + 1], "mcp__*")
+        for text in ("Why Initech?", "DevOps Engineer at Initech", '"value": "Asha"', "ignore any"):
+            self.assertIn(text, logged["stdin"])
+
+    def test_magic_fill_validates_input(self):
+        self.assertEqual(self.call("magic_fill", self.fill_payload(sessionId="x"))["error"]["code"], "BAD_REQUEST")
+        self.assertEqual(self.call("magic_fill", self.fill_payload(fields=[]))["error"]["code"], "BAD_REQUEST")
+        self.assertEqual(self.call("magic_fill", self.fill_payload(fields=[{"question": "no id"}]))["error"]["code"], "BAD_REQUEST")
+        self.assertEqual(self.call("magic_fill", self.fill_payload(profile="x"))["error"]["code"], "BAD_REQUEST")
+
     def test_unknown_action(self):
         self.assertEqual(self.call("explode", {})["error"]["code"], "UNKNOWN_ACTION")
 

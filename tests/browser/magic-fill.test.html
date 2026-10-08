@@ -1,0 +1,80 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>RUNNING</title></head>
+<body>
+<h1>DevOps Engineer — Apply</h1>
+<form>
+  <label for="name">Full name</label><input id="name" value="Asha Rao">
+  <label for="yrs">How many years of relevant experience do you have?</label><textarea id="yrs" maxlength="200"></textarea>
+  <label for="salary">What are your salary expectations?</label><input id="salary" type="number">
+  <label for="cur">Currency</label>
+  <select id="cur"><option value="">Select…</option><option value="INR">India Rupee ( INR )</option><option value="USD">US Dollar</option></select>
+  <fieldset><legend>Are you strong in AWS, Kubernetes &amp; Terraform?</legend>
+    <label><input type="radio" name="strong" value="y"> Yes</label>
+    <label><input type="radio" name="strong" value="n"> No</label></fieldset>
+  <fieldset><legend>Are you from Bangalore?</legend>
+    <label><input type="radio" name="blr" value="y" checked> Yes</label>
+    <label><input type="radio" name="blr" value="n"> No</label></fieldset>
+  <label for="start">Earliest start date</label><input id="start" type="date">
+  <label for="refs">Please provide 5 references</label><input id="refs">
+  <label for="resume">Resume</label><input id="resume" type="file">
+  <label><input type="checkbox" id="agree"> I agree to the terms</label>
+</form>
+<pre id="results"></pre>
+<script src="../../extension/lib/util.js"></script>
+<script src="../../extension/lib/profile.js"></script>
+<script src="../../extension/lib/matcher.js"></script>
+<script src="../../extension/content/extract.js"></script>
+<script src="../../extension/content/fill.js"></script>
+<script>
+(async () => {
+  const results = [];
+  const check = (name, cond) => results.push(`${cond ? "PASS" : "FAIL"} ${name}`);
+  const $ = (s) => document.querySelector(s);
+  const C = JobPilot.content;
+
+  const scan = C.formFields();
+  const q = (text) => scan.fields.find((f) => f.question.includes(text));
+  check("user-typed name is context, not a field", !q("Full name") && scan.filled.some((f) => f.question === "Full name" && f.value === "Asha Rao"));
+  check("preset radio is context with its option text", scan.filled.some((f) => f.question.includes("Bangalore") && f.value === "Yes"));
+  check("textarea listed with maxLength", q("years of relevant")?.type === "textarea" && q("years of relevant").maxLength === 200);
+  check("select options exclude the placeholder", JSON.stringify(q("Currency")?.options) === JSON.stringify(["India Rupee ( INR )", "US Dollar"]));
+  check("radio group listed once with options", scan.fields.filter((f) => f.question.includes("AWS")).length === 1 && q("AWS").options.join() === "Yes,No");
+  check("date field listed", q("start date")?.type === "date");
+  check("checkbox and file never listed", !scan.fields.some((f) => ["checkbox", "file"].includes(f.type)));
+  check("page title captured", scan.title === "RUNNING");
+
+  const values = [
+    { id: q("years of relevant").id, value: "6 years, mostly AWS and Kubernetes", sensitive: false },
+    { id: q("salary").id, value: "3500000", sensitive: true },
+    { id: q("Currency").id, value: "India Rupee ( INR )", sensitive: false },
+    { id: q("AWS").id, value: "Yes", sensitive: false },
+    { id: q("start date").id, value: "2026-11-15", sensitive: false },
+    { id: "not-on-this-page", value: "x", sensitive: false },
+  ];
+  const pdfB64 = btoa("%PDF-1.4 tailored");
+  const report = C.fillValues({ values, pdf: { base64: pdfB64, name: "tailored.pdf" } });
+  check("textarea filled", $("#yrs").value === "6 years, mostly AWS and Kubernetes");
+  check("number filled", $("#salary").value === "3500000");
+  check("select filled by option text", $("#cur").value === "INR");
+  check("radio picked", $('input[name="strong"][value="y"]').checked);
+  check("date filled", $("#start").value === "2026-11-15");
+  check("user's radio kept", $('input[name="blr"][value="y"]').checked);
+  check("user's name kept", $("#name").value === "Asha Rao");
+  check("references left blank and marked for the user", $("#refs").value === "" && $("#refs").style.outline.includes("dashed"));
+  check("sensitive marked amber", $("#salary").style.outline.includes("rgb(245, 158, 11)") || $("#salary").style.outline.includes("#f59e0b"));
+  check("checkbox untouched", !$("#agree").checked);
+  check("resume attached", $("#resume").files.length === 1 && $("#resume").files[0].name === "tailored.pdf");
+  check("report counts", report.filled === 5 && report.sensitive === 1 && report.unmatched === 1 && report.kept === 2 && report.fileAttached);
+
+  $("#salary").value = "4000000"; // user edits after the fill
+  const again = C.fillValues({ values });
+  check("re-run keeps the user's edit", $("#salary").value === "4000000" && again.kept === 3);
+  check("re-run refills its own fields", $("#yrs").value.startsWith("6 years"));
+  check("a field we filled isn't sent as already-filled context", !C.formFields().filled.some((f) => f.question.includes("years of relevant")));
+
+  const failed = results.filter((r) => r.startsWith("FAIL"));
+  document.getElementById("results").textContent = results.join("\n");
+  document.title = failed.length ? `FAIL ${failed.length}/${results.length}` : `PASS ${results.length}/${results.length}`;
+})().catch((e) => { document.title = "ERROR " + e.message; document.getElementById("results").textContent = e.stack; });
+</script>
+</body></html>
