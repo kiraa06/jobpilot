@@ -237,7 +237,7 @@
     return result(await render(p, deps), notes);
   }
 
-  const api = { buildCvPdf, wrapText, sanitize, fitText, glyphSafe, registerFont };
+  const api = { buildCvPdf, trimOnce, wrapText, sanitize, fitText, glyphSafe, registerFont };
   if (typeof module === "object" && module.exports) module.exports = api;
   else (root.JobPilot = root.JobPilot || {}).cvPdf = api;
 })(globalThis);

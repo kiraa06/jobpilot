@@ -51,7 +51,8 @@ function startConfirming() {
   clearInterval(quipTimer);
   show("running");
   $("quip").textContent = "Making your PDF…";
-  $("safe").classList.add("hidden");
+  $("elapsed").textContent = "";
+  $("safe").classList.remove("hidden");
   $("cancel").classList.add("hidden");
 }
 
@@ -90,62 +91,60 @@ function renderReview(result) {
   $("accept-blocking").onchange = () => { $("confirm").disabled = !$("accept-blocking").checked; };
 }
 
-async function loadFonts() {
-  const get = async (f) => {
-    const r = await fetch(chrome.runtime.getURL(`vendor/fonts/${f}`));
-    if (!r.ok) throw new Error("font");
-    return new Uint8Array(await r.arrayBuffer());
-  };
-  try { return { regular: await get("Lato-Regular.ttf"), bold: await get("Lato-Bold.ttf") }; }
-  catch (_) { throw new Error("Couldn't load the CV font — reload the extension."); }
+let confirmInFlight = false;
+
+function pdfNote(pdf) {
+  if (!pdf) return "";
+  let note = `Saved Downloads/JobPilot/${pdf.name}.`;
+  if (pdf.design === "yours") note += " In your CV's design.";
+  if (pdf.trimmed?.length) note += ` Trimmed to 2 pages (${pdf.trimmed.length} cuts).`;
+  return note;
 }
 
-let confirmInFlight = false;
+function pdfWarnings(pdf) {
+  const w = [];
+  if (pdf?.fallbackReason) w.push(`Used the standard design — ${pdf.fallbackReason}`);
+  if (pdf?.overflow) w.push(`Still ${pdf.pages} pages — trim your profile in Settings.`);
+  return w.join(" ");
+}
 
 async function confirmMagic() {
   if (confirmInFlight) return;
   confirmInFlight = true;
   $("confirm").disabled = true;
   try {
-    const job = (await chrome.storage.session.get(`job:${tabId}`))[`job:${tabId}`];
-    if (!job?.result) {
-      show("main");
-      status("That review expired — run Magic Edit again.", "error");
-      return;
-    }
-    status("Rendering your shiny new PDF…");
-    let out, name;
-    try {
-      out = await JobPilot.cvPdf.buildCvPdf(JobPilot.profile.normalizeProfile(job.result.tailoredProfile),
-        { PDFLib: window.PDFLib, fontkit: window.fontkit, fonts: await loadFonts() });
-      name = JobPilot.util.pdfFileName(job.result.company, job.result.role, new Date());
-    } catch (e) {
-      status(/^Couldn't load/.test(e.message) ? e.message : `PDF failed: ${e.message}`, "error");
-      $("confirm").disabled = false;
-      return;
-    }
-    const res = await send({ type: "magic:confirm", tabId, pdf: { base64: JobPilot.util.bytesToBase64(out.bytes), name } });
+    status("");
+    startConfirming();
+    const res = await send({ type: "magic:confirm", tabId });
     if (res.error?.code === WORKER_GONE.code) {
-      status("PDF built, but JobPilot's background stopped — reopen the popup and try Make PDF again.", "error");
-      $("confirm").disabled = false;
+      show("main");
+      status("JobPilot's background stopped — reopen the popup and try Make PDF again.", "error");
+      return;
+    }
+    if (res.error?.code === "PDF_FAILED" || res.error?.code === "NO_REVIEW") {
+      const job = (await chrome.storage.session.get(`job:${tabId}`))[`job:${tabId}`];
+      if (job?.state === "review") renderReview(job.result); else show("main");
+      status(res.error.message, "error");
       return;
     }
     show("main");
     await renderMode();
-    const saved = (res.ok ? res.data?.downloaded : res.downloaded) ? `Saved Downloads/JobPilot/${name}.` : "";
+    const saved = res.ok || res.downloaded ? pdfNote(res.data?.pdf || res.pdf) : "";
     if (!res.ok) {
       status(`${saved} ${ERROR_HINTS[res.error?.code] || res.error?.message || "Autofill failed."}`.trim(), "error");
       send({ type: "job:clear", tabId });
       return;
     }
-    const trimmed = out.trimmed?.length ? ` Trimmed to 2 pages (${out.trimmed.length} cuts).` : "";
-    reportAutofill(res.data, `${saved}${trimmed}`);
-    if (out.overflow) {
-      $("status").textContent += ` Heads up: still ${out.pages} pages — trim your profile in Settings.`;
+    reportAutofill(res.data, saved);
+    send({ type: "job:clear", tabId });
+    const warn = pdfWarnings(res.data.pdf);
+    if (warn) {
+      $("status").textContent += ` Heads up: ${warn}`;
       $("status").className = "warn";
     }
   } finally {
     confirmInFlight = false;
+    $("confirm").disabled = false;
   }
 }
 
@@ -191,9 +190,13 @@ async function applyJob(job, initial = false) {
   if (job.state === "done") {
     show("main");
     if (initial && job.fillError) {
-      const t = (await chrome.storage.session.get(`tailored:${tabId}`))[`tailored:${tabId}`];
-      const saved = t?.pdf?.name ? `Saved Downloads/JobPilot/${t.pdf.name}. ` : "";
+      const saved = job.pdf ? `${pdfNote(job.pdf)} ` : "";
       status(`${saved}${ERROR_HINTS[job.fillError.code] || job.fillError.message || "Autofill failed."}`, "error");
+      send({ type: "job:clear", tabId });
+    } else if (initial && job.report) { // finished while the popup was closed
+      reportAutofill(job.report, pdfNote(job.pdf));
+      const warn = pdfWarnings(job.pdf);
+      if (warn) { $("status").textContent += ` Heads up: ${warn}`; $("status").className = "warn"; }
       send({ type: "job:clear", tabId });
     }
     return;

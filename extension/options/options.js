@@ -94,6 +94,7 @@ $("import").onclick = async () => {
     }
     await saveProfile(fresh);
     const roles = fresh.experience.length;
+    loadDesignState();
     say("import-status", `✓ Imported ${fresh.basics.firstName || "your CV"} — ${roles} role${roles === 1 ? "" : "s"}. Check the details below.`, "ok");
   } catch (e) {
     say("import-status", `Import failed: ${e.message}`, "error");
@@ -117,6 +118,98 @@ $("save-session").onclick = async () => {
 
 $("save-basics").onclick = () => saveEditor("basics-status");
 $("save-profile").onclick = () => saveEditor("profile-status");
+
+// ── 6 · Your CV's design
+let designBusy = false;
+const blobUrls = [];
+function pdfUrl(base64) {
+  const url = URL.createObjectURL(new Blob([JobPilot.util.base64ToBytes(base64)], { type: "application/pdf" }));
+  blobUrls.push(url);
+  return url;
+}
+
+async function loadDesignState() {
+  const { design, designDraft, designStale, originalPdf } = await chrome.storage.local.get(["design", "designDraft", "designStale", "originalPdf"]);
+  let text = "Not captured yet — Magic Edit uses the standard design.";
+  if (design) {
+    text = `✓ Using your design (approved ${new Date(design.approvedAt).toLocaleDateString()}).`;
+    if (designStale) text += " You've re-imported your CV since — capture again if its design changed.";
+  }
+  say("design-state", text, design ? "ok" : "muted");
+  $("capture").textContent = design ? "Capture again" : "Capture my design";
+  $("capture").disabled = designBusy || !originalPdf;
+  if (!originalPdf) say("design-state", "Import your CV (section 2) first — the design is copied from that PDF.", "muted");
+  $("reset-design").classList.toggle("hidden", !design);
+  return { design, designDraft };
+}
+
+async function previewDraft(draft) {
+  const { originalPdf } = await chrome.storage.local.get("originalPdf");
+  $("design-review").classList.remove("hidden");
+  if (originalPdf) $("orig-view").src = pdfUrl(originalPdf.base64);
+  $("copy-view").removeAttribute("src");
+  $("approve-design").classList.add("hidden");
+  const notes = [...(draft.notes || [])];
+  $("design-notes").replaceChildren(...notes.map((n) => Object.assign(document.createElement("li"), { textContent: n })));
+  say("design-status", "Printing a preview…");
+  const res = await send({ type: "design:render", template: draft.template, preview: true }).catch((e) => ({ ok: false, error: { message: e.message } }));
+  if (!res || !res.ok) {
+    draft.rejected = res?.error?.message || "It didn't print.";
+    await chrome.storage.local.set({ designDraft: draft });
+    say("design-status", `This attempt didn't pass: ${draft.rejected} Press Try again (a note is optional).`, "error");
+    return;
+  }
+  $("copy-view").src = pdfUrl(res.data.base64);
+  $("approve-design").classList.remove("hidden");
+  say("design-status", `Compare the two. Happy? Use this design. Not quite? Say what's off and try again. (${res.data.pages} page${res.data.pages === 1 ? "" : "s"})`);
+}
+
+async function capture(feedback = "") {
+  if (designBusy) return;
+  designBusy = true;
+  $("capture").disabled = $("retry-design").disabled = $("approve-design").disabled = true;
+  try {
+    const { designDraft } = await chrome.storage.local.get("designDraft");
+    const notes = [feedback];
+    if (designDraft?.rejected) notes.push(`Your previous attempt was rejected automatically: ${designDraft.rejected}`);
+    const fullFeedback = notes.filter(Boolean).join("\n");
+    say("design-status", "Claude is studying your CV's design… (1–3 min, keep this tab open)");
+    const res = await send({ type: "design:capture", feedback: fullFeedback, previousTemplate: fullFeedback ? designDraft?.template : "" })
+      .catch((e) => ({ ok: false, error: { message: e.message } }));
+    if (!res || !res.ok) return say("design-status", res?.error?.message || "Capture failed.", "error");
+    $("design-feedback").value = "";
+    await previewDraft(res.data);
+  } finally {
+    designBusy = false;
+    $("retry-design").disabled = $("approve-design").disabled = false;
+    await loadDesignState();
+  }
+}
+
+$("capture").onclick = () => capture();
+$("retry-design").onclick = () => capture($("design-feedback").value.trim());
+$("approve-design").onclick = async () => {
+  const { designDraft } = await chrome.storage.local.get("designDraft");
+  if (!designDraft?.template) return say("design-status", "That preview expired — capture again.", "error");
+  const { rejected, ...draft } = designDraft;
+  await chrome.storage.local.set({ design: { ...draft, approvedAt: Date.now() } });
+  await chrome.storage.local.remove(["designDraft", "designStale"]);
+  $("design-review").classList.add("hidden");
+  say("design-status", "✓ Saved. Magic Edit will now use your design.", "ok");
+  await loadDesignState();
+};
+$("reset-design").onclick = async () => {
+  if (!confirm("Go back to JobPilot's standard design? You can capture yours again any time.")) return;
+  await chrome.storage.local.remove(["design", "designStale"]);
+  say("design-status", "Back to the standard design.", "ok");
+  await loadDesignState();
+};
+window.addEventListener("pagehide", () => blobUrls.forEach((u) => URL.revokeObjectURL(u)));
+
+(async () => {
+  const { designDraft } = await loadDesignState();
+  if (designDraft?.template) previewDraft(designDraft); // a capture finished while this page was closed
+})();
 
 $("ping").onclick = checkHelper;
 checkHelper();

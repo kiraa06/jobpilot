@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+from jobpilot import VERSION
 import time
 from pathlib import Path
 
@@ -79,11 +81,11 @@ class HostTest(unittest.TestCase):
             self.assertEqual(code, 0)
 
     def test_ping_with_valid_home(self):
-        """Ping with valid temp home should succeed with version 0.1.0."""
+        """Ping with valid temp home should succeed and report the helper version."""
         res = self._run_host("ping")
         self.assertIsNotNone(res)
         self.assertTrue(res["ok"])
-        self.assertEqual(res["data"]["version"], "0.1.0")
+        self.assertEqual(res["data"]["version"], VERSION)
 
     def test_ping_with_corrupt_config(self):
         """Ping with invalid config.json should return HOST_ERROR, not crash."""
