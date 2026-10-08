@@ -8,8 +8,8 @@ import uuid
 
 from . import VERSION
 from .claude_runner import ClaudeError, run_claude
-from .prompts import design_prompt, import_prompt, magic_prompt
-from .schemas import DESIGN_SCHEMA, MAGIC_SCHEMA, PROFILE_SCHEMA
+from .prompts import design_prompt, fill_prompt, import_prompt, magic_prompt
+from .schemas import DESIGN_SCHEMA, FILL_SCHEMA, MAGIC_SCHEMA, PROFILE_SCHEMA
 from .truth import pin_basics, truth_check
 
 log = logging.getLogger("jobpilot")
@@ -21,6 +21,8 @@ MAX_TEMPLATE_CHARS = 100_000
 MAX_FEEDBACK_CHARS = 2_000
 MAX_PDF_BYTES = 10 * 1024 * 1024
 MAX_QUESTIONS = 40
+MAX_FILL_FIELDS = 120
+MAX_FIELD_TEXT = 300
 # Untrusted text (JDs, CVs) reaches these runs: load no MCP servers, no user/project settings or hooks.
 ISOLATION = ("--strict-mcp-config", "--setting-sources", "")
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
@@ -135,7 +137,65 @@ def magic_edit(payload, cfg, cancel):
     }
 
 
-HANDLERS = {"import_cv": import_cv, "magic_edit": magic_edit, "capture_design": capture_design}
+def _fill_field(raw):
+    """Keep only what Claude needs from a field descriptor, with bounded text."""
+    if not isinstance(raw, dict) or not raw.get("id"):
+        return None
+    clip = lambda v: str(v or "").strip()[:MAX_FIELD_TEXT]
+    field = {"id": clip(raw["id"]), "question": clip(raw.get("question")), "type": clip(raw.get("type")) or "text"}
+    for key in ("hint", "placeholder"):
+        if raw.get(key):
+            field[key] = clip(raw[key])
+    options = [clip(o) for o in raw.get("options") or [] if clip(o)][:100]
+    if options:
+        field["options"] = options
+    if isinstance(raw.get("maxLength"), int) and raw["maxLength"] > 0:
+        field["maxLength"] = raw["maxLength"]
+    if raw.get("required"):
+        field["required"] = True
+    return field
+
+
+def magic_fill(payload, cfg, cancel):
+    session_id = normalize_session_id(payload.get("sessionId"))
+    if not session_id:
+        raise ValueError("Session ID must be a UUID like 00000000-0000-4000-8000-000000000000.")
+    profile = payload.get("profile")
+    if not isinstance(profile, dict):
+        raise ValueError("No CV profile was provided.")
+    fields = [f for f in map(_fill_field, list(payload.get("fields") or [])[:MAX_FILL_FIELDS]) if f]
+    if not fields:
+        raise ValueError("No form fields were found to fill.")
+    filled = [{"question": str(f.get("question") or "")[:MAX_FIELD_TEXT], "value": str(f.get("value") or "")[:MAX_FIELD_TEXT]}
+              for f in list(payload.get("filled") or [])[:MAX_FILL_FIELDS] if isinstance(f, dict)]
+    data = run_claude(
+        ["--resume", session_id, "--fork-session", "--tools", "", *ISOLATION, "--disallowedTools", "mcp__*",
+         "--json-schema", json.dumps(FILL_SCHEMA)],
+        fill_prompt(fields=fields, filled=filled, jd=payload.get("jd") or "", profile=profile,
+                    page_url=payload.get("pageUrl") or "", page_title=payload.get("pageTitle") or ""),
+        claude_bin=cfg["claudeBin"], cwd=cfg["home"], timeout=MAGIC_TIMEOUT, cancel=cancel,
+    )
+    out = data["structured_output"]
+    by_id = {f["id"]: f for f in fields}
+    values, seen = [], set()
+    for v in out.get("values") or []:
+        field = by_id.get(v.get("id"))
+        value = str(v.get("value") or "").strip()
+        if not field or not value or field["id"] in seen:
+            continue  # unknown id, empty answer or duplicate
+        if field.get("options"):  # choice fields must name one of the real options
+            key = " ".join(value.lower().split())
+            value = next((o for o in field["options"] if " ".join(o.lower().split()) == key), None)
+            if value is None:
+                continue
+        if field.get("maxLength"):
+            value = value[:field["maxLength"]]
+        seen.add(field["id"])
+        values.append({"id": field["id"], "value": value, "sensitive": bool(v.get("sensitive"))})
+    return {"values": values, "notes": (out.get("notes") or [])[:5], "fieldCount": len(fields)}
+
+
+HANDLERS = {"import_cv": import_cv, "magic_edit": magic_edit, "capture_design": capture_design, "magic_fill": magic_fill}
 
 
 def handle(msg, cfg, cancel):

@@ -45,3 +45,8 @@ DESIGN_SCHEMA = _obj({
     "fontsUsed": _STR_LIST,
     "notes": _STR_LIST,
 })
+
+FILL_SCHEMA = _obj({
+    "values": _list_of({"id": _STR, "value": _STR, "sensitive": {"type": "boolean"}}),
+    "notes": _STR_LIST,
+})

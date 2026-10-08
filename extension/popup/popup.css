@@ -24,3 +24,4 @@ section { margin-bottom: 10px; }
 .mode-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; margin: 4px 0 0; }
 button.link { background: none; border: 0; padding: 0; color: var(--brand); text-decoration: underline; font-size: 11.5px; }
 #status.warn { color: var(--warn-text); }
+.wide { width: 100%; margin-top: 8px; }

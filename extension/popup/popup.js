@@ -56,12 +56,12 @@ function startConfirming() {
   $("cancel").classList.add("hidden");
 }
 
-function startRunning(startedAt) {
+function startRunning(startedAt, kind) {
   clearInterval(quipTimer);
   show("running");
   $("safe").classList.remove("hidden");
   $("cancel").classList.remove("hidden");
-  const quips = globalThis.JobPilotQuips;
+  const quips = kind === "fill" ? globalThis.JobPilotFillQuips : globalThis.JobPilotQuips;
   let i = Math.floor(Math.random() * quips.length);
   const tick = () => {
     $("quip").textContent = quips[i++ % quips.length];
@@ -187,6 +187,13 @@ async function init() {
 
 async function applyJob(job, initial = false) {
   if (!job) return show("main");
+  if (job.state === "done" && job.kind === "fill") { // Magic Autofill finished (popup open or reopened)
+    show("main");
+    reportAutofill(job.report, "✨");
+    if (job.notes?.length) { $("status").textContent += ` Check: ${job.notes.join(" · ")}`; }
+    send({ type: "job:clear", tabId });
+    return;
+  }
   if (job.state === "done") {
     show("main");
     if (initial && job.fillError) {
@@ -201,7 +208,7 @@ async function applyJob(job, initial = false) {
     }
     return;
   }
-  if (job.state === "running") return startRunning(job.startedAt);
+  if (job.state === "running") return startRunning(job.startedAt, job.kind);
   if (job.state === "confirming") return startConfirming();
   if (job.state === "review") return renderReview(job.result);
   if (job.state === "error") { show("main"); showError(job.error); send({ type: "job:clear", tabId }); }
@@ -222,6 +229,12 @@ $("autofill").onclick = () => busy($("autofill"), async () => {
 $("magic").onclick = () => busy($("magic"), async () => {
   status("");
   const res = await send({ type: "magic:start", tabId });
+  if (!res.ok) showError(res.error);
+  else if (res.data?.state === "cancelled") show("main");
+});
+$("magic-fill").onclick = () => busy($("magic-fill"), async () => {
+  status("");
+  const res = await send({ type: "magic:fill", tabId });
   if (!res.ok) showError(res.error);
   else if (res.data?.state === "cancelled") show("main");
 });
