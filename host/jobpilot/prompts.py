@@ -132,7 +132,7 @@ For reference, this is the CV's content as already extracted (do NOT copy any of
 {revision}"""
 
 DESIGN_REVISION = """
-REVISION: below is your previous template. Kiran looked at it and asked for this change:
+REVISION: below is your previous template. The user looked at it and asked for this change:
 <<<
 {feedback}
 >>>
@@ -149,7 +149,7 @@ def design_prompt(*, pdf_path, profile, fonts, feedback="", previous_template=""
     if previous_template and feedback:
         revision = DESIGN_REVISION.format(feedback=feedback, previous_template=previous_template)
     elif feedback:
-        revision = f"\nKiran's note about the design: {feedback}\n"
+        revision = f"\nThe user's note about the design: {feedback}\n"
     return DESIGN_TEMPLATE.format(
         pdf_path=pdf_path, font_list=font_list, page_sizes="A4 or Letter, matching the PDF",
         profile_json=json.dumps(profile, indent=2, ensure_ascii=False), revision=revision,

@@ -63,3 +63,11 @@ python3 -m http.server 8765 --bind 127.0.0.1        # then open tests/browser/fi
 JS tests: `node --test tests/js/*.test.cjs`.
 
 Helper log: `~/.jobpilot/host.log`.
+
+## Contributing
+
+Issues and pull requests are welcome. Run `./scripts/test.sh` and the two browser harnesses before opening a PR.
+
+## License
+
+[MIT](LICENSE). Bundled third-party libraries and fonts keep their own licences — see [`extension/vendor/LICENSES.md`](extension/vendor/LICENSES.md).
