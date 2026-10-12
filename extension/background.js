@@ -138,6 +138,71 @@ async function magicStart(tabId) {
   }
 }
 
+// ✨ Magic Autofill: Claude (in a fork of the user's session) fills every field it can, by id.
+async function magicFill(tabId) {
+  if (running.has(tabId)) return ok({ state: "running" });
+  const claim = { cancelled: false, cancel() { this.cancelled = true; } };
+  running.set(tabId, claim);
+  let started = false;
+  try {
+    const existing = await session.get(`job:${tabId}`);
+    if (existing?.state === "review" || existing?.state === "confirming") {
+      return fail("REVIEW_PENDING", "Finish or discard the Magic Edit review first.");
+    }
+    const { profile, sessionId, originalPdf } = await chrome.storage.local.get(["profile", "sessionId", "originalPdf"]);
+    if (!profile) return fail("NO_PROFILE", "Import your CV first — open Settings.");
+    if (!sessionId) return fail("NO_SESSION", "Add your Claude session ID in Settings.");
+    await inject(tabId);
+    const tab = await chrome.tabs.get(tabId);
+    const scans = await runInFrames(tabId, "formFields", {});
+    const fields = scans.flatMap((x) => x.fields).slice(0, 120);
+    if (!fields.length) return fail("NO_FORM", "No fields here for me to fill. Just vibes.");
+    const filled = scans.flatMap((x) => x.filled);
+    let override = await session.get(`jd:${tabId}`);
+    if (override && override.url !== tab.url) override = null;
+    const jd = override?.text || scans.map((x) => x.jd).sort((a, b) => b.length - a.length)[0] || "";
+    const pageTitle = scans.map((x) => x.title).find(Boolean) || tab.title || "";
+    await session.set(`job:${tabId}`, { state: "running", kind: "fill", startedAt: Date.now() });
+    if (claim.cancelled) {
+      await session.remove(`job:${tabId}`);
+      return ok({ state: "cancelled" });
+    }
+    const call = callHost("magic_fill", { sessionId, profile, fields, filled, jd, pageUrl: tab.url, pageTitle });
+    running.set(tabId, call);
+    started = true;
+    call.promise.then(async (res) => {
+      if (running.get(tabId) === call) running.delete(tabId);
+      if (!res?.ok) {
+        if (res?.error?.code !== "CANCELLED") {
+          await session.set(`job:${tabId}`, { state: "error", kind: "fill", error: res?.error || { code: "HOST_DISCONNECTED", message: "No response from the helper." } });
+        }
+        return;
+      }
+      const tailored = await session.get(`tailored:${tabId}`);
+      const pdf = tailored?.pdf || originalPdf || null;
+      let report;
+      try {
+        const reports = await runInFrames(tabId, "fillValues", { values: res.data.values, pdf });
+        report = { filled: 0, sensitive: 0, unmatched: 0, kept: 0, fieldCount: 0, fileFieldFound: false, fileAttached: false };
+        for (const r of reports) {
+          for (const k of ["filled", "sensitive", "unmatched", "kept", "fieldCount"]) report[k] += r[k];
+          report.fileFieldFound ||= r.fileFieldFound;
+          report.fileAttached ||= r.fileAttached;
+        }
+      } catch (e) {
+        await session.set(`job:${tabId}`, { state: "error", kind: "fill", error: { code: "FILL_FAILED", message: `Claude answered, but the page changed before I could fill it (${e.message || e}). Try again.` } });
+        return;
+      }
+      await session.set(`job:${tabId}`, { state: "done", kind: "fill", report, notes: res.data.notes || [] });
+    }).catch((e) => session.set(`job:${tabId}`, { state: "error", kind: "fill", error: { code: "EXTENSION_ERROR", message: e?.message || String(e) } }));
+    if (override) await session.remove(`jd:${tabId}`);
+    chrome.action.setBadgeText({ tabId, text: "" });
+    return ok({ state: "running" });
+  } finally {
+    if (!started && running.get(tabId) === claim) running.delete(tabId);
+  }
+}
+
 async function magicCancel(tabId) {
   running.get(tabId)?.cancel();
   running.delete(tabId);
@@ -275,6 +340,7 @@ const HANDLERS = {
   "cv:import": (m) => importCv(m),
   autofill: (m) => autofill(m.tabId),
   "magic:start": (m) => magicStart(m.tabId),
+  "magic:fill": (m) => magicFill(m.tabId),
   "magic:cancel": (m) => magicCancel(m.tabId),
   "magic:confirm": (m) => magicConfirm(m.tabId),
   "design:capture": (m) => designCapture(m),

@@ -8,3 +8,11 @@ globalThis.JobPilotQuips = [
   "Double-checking we didn't give you a PhD by accident…",
   "Polishing. Buffing. Shining…",
 ];
+globalThis.JobPilotFillQuips = [
+  "Reading the form so you don't have to…",
+  "Answering “why us?” with feeling…",
+  "Filling boxes at a speed HR can only dream of…",
+  "Leaving the salary question for you. We're brave, not reckless…",
+  "Converting your career into dropdown options…",
+  "Typing politely on your behalf…",
+];

@@ -27,9 +27,15 @@ Open JobPilot → ⚙ Settings:
   the form (including open questions). Anything not in your original CV is flagged before the PDF is made.
   After tailoring, the popup says "Using your CV tailored for <role> @ <company>" with a "Use original" link to go back.
   If the tailored PDF still can't fit 2 pages, the popup warns ("Heads up: still N pages…").
+- **✨ Magic Autofill** — sends every field on the page (plus the job description and your CV) to a fork of your
+  session; Claude fills everything it knows about you, by field, straight into the form. Same colours as Autofill.
+  It leaves references, equal-opportunity/demographic questions, consents and anything it isn't sure of for you,
+  keeps whatever you already filled, and attaches your tailored PDF (or your original CV). One click per page on
+  multi-step forms. Takes ~30–90 s; safe to close the popup meanwhile.
+- **Your CV's design** (Settings → 6) — capture your imported CV's look once; Magic Edit's PDFs then use it.
+  If it ever fails to print, the standard design is used and the popup says why.
 - No job description found? Select it on the page → right-click → **Use as job description**.
-- Making the PDF takes 5–12 s on long CVs. Closing the popup during that step cancels it — just click
-  **Make PDF & Autofill** again.
+- Making the PDF happens in the background — closing the popup doesn't cancel it.
 
 ## Known limitations
 
@@ -49,10 +55,19 @@ Then remove the extension from `arc://extensions` (or `chrome://extensions`).
 
 ```bash
 ./scripts/test.sh                                   # Python + JS unit tests
-python3 -m http.server 8765 --bind 127.0.0.1        # then open tests/browser/fill.test.html → title PASS 43/43
+python3 -m http.server 8765 --bind 127.0.0.1        # then open tests/browser/fill.test.html → PASS 43/43
+                                                    #  and tests/browser/magic-fill.test.html → PASS 23/23
 ./scripts/vendor.sh                                 # re-download vendored libs (checksum-verified)
 ```
 
 JS tests: `node --test tests/js/*.test.cjs`.
 
 Helper log: `~/.jobpilot/host.log`.
+
+## Contributing
+
+Issues and pull requests are welcome. Run `./scripts/test.sh` and the two browser harnesses before opening a PR.
+
+## License
+
+[MIT](LICENSE). Bundled third-party libraries and fonts keep their own licences — see [`extension/vendor/LICENSES.md`](extension/vendor/LICENSES.md).
